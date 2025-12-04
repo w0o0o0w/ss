@@ -1,0 +1,892 @@
+https://www.google-analytics.com/g/collect?v=2&tid=G-TC4X0BJWTJ&gtm=45je5c30h1v9235343746za200zd9235343746&_p=1764879792295&gcd=13l3l3l3l1l1&npa=0&dma=0&cid=2128906605.1764879795&ul=en-ir&sr=1680x1050&uaa=x86&uab=64&uafvl=Not%253BA%253DBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B139.0.7258.155%7CChromium%3B139.0.7258.155&uamb=0&uam=&uap=Windows&uapv=19.0.0&uaw=0&are=1&frm=0&pscdl=noapi&_eu=AAAAAAQ&tag_exp=103116026~103200004~104527906~104528500~104684208~104684211~105391253~115583767~115938465~115938469~116184927~116184929~116217636~116217638~116251935~116251937~116427528~116474638&sid=1764879795&sct=1&seg=1&dl=https%3A%2F%2Ftehran.earth%2F&dt=%D8%B4%D8%A7%D8%AE%D8%B5%20%DA%A9%DB%8C%D9%81%DB%8C%D8%AA%20%D8%A2%D9%84%D9%88%D8%AF%DA%AF%DB%8C%20%D9%87%D9%88%D8%A7%DB%8C%20%D8%AA%D9%87%D8%B1%D8%A7%D9%86%20%D9%88%20%D8%A7%DB%8C%D8%B1%D8%A7%D9%86&_s=7&tfd=186083
+
+// Service Worker Version: 2.0.5 (Updated: 2025-12-04)
+const STATIC_ASSETS = [
+  '/css/style.css',
+  '/js/app.js',
+  '/js/stations.js',
+  '/manifest.json'
+];
+
+async function getVersion() {
+  try {
+    const response = await fetch('/version.json');
+    const data = await response.json();
+    return data.version || '1.0.0';
+  } catch {
+    return '1.0.0';
+  }
+}
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    getVersion().then((version) => {
+      const cacheName = `tehran-aqi-v${version}`;
+      return caches.open(cacheName).then((cache) => {
+        return cache.addAll(STATIC_ASSETS);
+      });
+    })
+  );
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    getVersion().then((version) => {
+      const currentCacheName = `tehran-aqi-v${version}`;
+      return caches.keys().then((cacheNames) => {
+        const hadOldCache = cacheNames.some(name => name !== currentCacheName && name.startsWith('tehran-aqi-v'));
+        return Promise.all(
+          cacheNames.map((cacheName) => {
+            if (cacheName !== currentCacheName) {
+              return caches.delete(cacheName);
+            }
+          })
+        ).then(() => ({ hadOldCache, version }));
+      });
+    }).then(({ hadOldCache, version }) => {
+      if (hadOldCache) {
+        return self.clients.matchAll().then((clients) => {
+          clients.forEach((client) => {
+            client.postMessage({
+              type: 'UPDATE_AVAILABLE',
+              version: version
+            });
+          });
+        });
+      }
+    })
+  );
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+
+  if (request.method !== 'GET') return;
+
+  const url = new URL(request.url);
+
+  // Don't cache dynamic content - always fetch fresh
+  const shouldSkipCache = url.pathname.includes('api.php') ||
+                          url.pathname.includes('version.json') ||
+                          url.pathname === '/' ||
+                          url.pathname.includes('index.php') ||
+                          url.search.includes('nocache');
+
+  if (shouldSkipCache) {
+    event.respondWith(
+      fetch(request).catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  event.respondWith(
+    getVersion().then((version) => {
+      const cacheName = `tehran-aqi-v${version}`;
+      return fetch(request)
+        .then((response) => {
+          if (response.status === 200) {
+            const responseClone = response.clone();
+            caches.open(cacheName).then((cache) => {
+              cache.put(request, responseClone);
+            });
+          }
+          return response;
+        })
+        .catch(() => caches.match(request));
+    })
+  );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
+
+window._cf_chl_opt = {
+    xkKZ4: 'g'
+};
+~function(F1, y, f, W, k, S, L, H) {
+    F1 = M,
+    function(n, a, FY, F0, i, P) {
+        for (FY = {
+            n: 328,
+            a: 270,
+            i: 260,
+            P: 336,
+            U: 291,
+            T: 278,
+            Q: 268,
+            s: 330,
+            G: 256
+        },
+        F0 = M,
+        i = n(); !![]; )
+            try {
+                if (P = -parseInt(F0(FY.n)) / 1 + parseInt(F0(FY.a)) / 2 * (parseInt(F0(FY.i)) / 3) + parseInt(F0(FY.P)) / 4 + parseInt(F0(FY.U)) / 5 + parseInt(F0(FY.T)) / 6 + -parseInt(F0(FY.Q)) / 7 + -parseInt(F0(FY.s)) / 8 * (parseInt(F0(FY.G)) / 9),
+                a === P)
+                    break;
+                else
+                    i.push(i.shift())
+            } catch (U) {
+                i.push(i.shift())
+            }
+    }(F, 913663),
+    y = this || self,
+    f = y[F1(320)],
+    W = {},
+    W[F1(354)] = 'o',
+    W[F1(283)] = 's',
+    W[F1(305)] = 'u',
+    W[F1(315)] = 'z',
+    W[F1(300)] = 'n',
+    W[F1(287)] = 'I',
+    W[F1(308)] = 'b',
+    k = W,
+    y[F1(337)] = function(i, P, U, T, FP, FV, Fe, F6, s, G, O, x, J, g) {
+        if (FP = {
+            n: 304,
+            a: 350,
+            i: 292,
+            P: 325,
+            U: 296,
+            T: 266,
+            Q: 325,
+            s: 362,
+            G: 311,
+            O: 327,
+            x: 310,
+            d: 309
+        },
+        FV = {
+            n: 255,
+            a: 327,
+            i: 257
+        },
+        Fe = {
+            n: 323,
+            a: 302,
+            i: 279,
+            P: 312
+        },
+        F6 = F1,
+        P === null || P === void 0)
+            return T;
+        for (s = A(P),
+        i[F6(FP.n)][F6(FP.a)] && (s = s[F6(FP.i)](i[F6(FP.n)][F6(FP.a)](P))),
+        s = i[F6(FP.P)][F6(FP.U)] && i[F6(FP.T)] ? i[F6(FP.Q)][F6(FP.U)](new i[(F6(FP.T))](s)) : function(K, F7, I) {
+            for (F7 = F6,
+            K[F7(FV.n)](),
+            I = 0; I < K[F7(FV.a)]; K[I + 1] === K[I] ? K[F7(FV.i)](I + 1, 1) : I += 1)
+                ;
+            return K
+        }(s),
+        G = 'nAsAaAb'.split('A'),
+        G = G[F6(FP.s)][F6(FP.G)](G),
+        O = 0; O < s[F6(FP.O)]; x = s[O],
+        J = X(i, P, x),
+        G(J) ? (g = 's' === J && !i[F6(FP.x)](P[x]),
+        F6(FP.d) === U + x ? Q(U + x, J) : g || Q(U + x, P[x])) : Q(U + x, J),
+        O++)
+            ;
+        return T;
+        function Q(K, I, F5) {
+            F5 = M,
+            Object[F5(Fe.n)][F5(Fe.a)][F5(Fe.i)](T, I) || (T[I] = []),
+            T[I][F5(Fe.P)](K)
+        }
+    }
+    ,
+    S = F1(254)[F1(273)](';'),
+    L = S[F1(362)][F1(311)](S),
+    y[F1(360)] = function(n, i, FT, F8, P, U, T, Q) {
+        for (FT = {
+            n: 262,
+            a: 327,
+            i: 349,
+            P: 312,
+            U: 365
+        },
+        F8 = F1,
+        P = Object[F8(FT.n)](i),
+        U = 0; U < P[F8(FT.a)]; U++)
+            if (T = P[U],
+            T === 'f' && (T = 'N'),
+            n[T]) {
+                for (Q = 0; Q < i[P[U]][F8(FT.a)]; -1 === n[T][F8(FT.i)](i[P[U]][Q]) && (L(i[P[U]][Q]) || n[T][F8(FT.P)]('o.' + i[P[U]][Q])),
+                Q++)
+                    ;
+            } else
+                n[T] = i[P[U]][F8(FT.U)](function(s) {
+                    return 'o.' + s
+                })
+    }
+    ,
+    H = function(Ft, Fd, Fr, FO, Fs, FF, a, i, P) {
+        return Ft = {
+            n: 331,
+            a: 263
+        },
+        Fd = {
+            n: 346,
+            a: 346,
+            i: 312,
+            P: 346,
+            U: 346,
+            T: 372,
+            Q: 346,
+            s: 306,
+            G: 312
+        },
+        Fr = {
+            n: 327
+        },
+        FO = {
+            n: 327,
+            a: 306,
+            i: 323,
+            P: 302,
+            U: 279,
+            T: 302,
+            Q: 286,
+            s: 312,
+            G: 286,
+            O: 312,
+            x: 286,
+            d: 346,
+            J: 323,
+            g: 312,
+            K: 286,
+            I: 312,
+            R: 312,
+            j: 312,
+            D: 312,
+            h: 372
+        },
+        Fs = {
+            n: 343,
+            a: 306
+        },
+        FF = F1,
+        a = String[FF(Ft.n)],
+        i = {
+            'h': function(U) {
+                return U == null ? '' : i.g(U, 6, function(T, FM) {
+                    return FM = M,
+                    FM(Fs.n)[FM(Fs.a)](T)
+                })
+            },
+            'g': function(U, T, Q, FB, s, G, O, x, J, K, I, R, j, D, E, C, Z, z) {
+                if (FB = FF,
+                U == null)
+                    return '';
+                for (G = {},
+                O = {},
+                x = '',
+                J = 2,
+                K = 3,
+                I = 2,
+                R = [],
+                j = 0,
+                D = 0,
+                E = 0; E < U[FB(FO.n)]; E += 1)
+                    if (C = U[FB(FO.a)](E),
+                    Object[FB(FO.i)][FB(FO.P)][FB(FO.U)](G, C) || (G[C] = K++,
+                    O[C] = !0),
+                    Z = x + C,
+                    Object[FB(FO.i)][FB(FO.T)][FB(FO.U)](G, Z))
+                        x = Z;
+                    else {
+                        if (Object[FB(FO.i)][FB(FO.T)][FB(FO.U)](O, x)) {
+                            if (256 > x[FB(FO.Q)](0)) {
+                                for (s = 0; s < I; j <<= 1,
+                                D == T - 1 ? (D = 0,
+                                R[FB(FO.s)](Q(j)),
+                                j = 0) : D++,
+                                s++)
+                                    ;
+                                for (z = x[FB(FO.G)](0),
+                                s = 0; 8 > s; j = j << 1.12 | z & 1.5,
+                                T - 1 == D ? (D = 0,
+                                R[FB(FO.O)](Q(j)),
+                                j = 0) : D++,
+                                z >>= 1,
+                                s++)
+                                    ;
+                            } else {
+                                for (z = 1,
+                                s = 0; s < I; j = z | j << 1.66,
+                                T - 1 == D ? (D = 0,
+                                R[FB(FO.s)](Q(j)),
+                                j = 0) : D++,
+                                z = 0,
+                                s++)
+                                    ;
+                                for (z = x[FB(FO.x)](0),
+                                s = 0; 16 > s; j = z & 1 | j << 1,
+                                T - 1 == D ? (D = 0,
+                                R[FB(FO.O)](Q(j)),
+                                j = 0) : D++,
+                                z >>= 1,
+                                s++)
+                                    ;
+                            }
+                            J--,
+                            0 == J && (J = Math[FB(FO.d)](2, I),
+                            I++),
+                            delete O[x]
+                        } else
+                            for (z = G[x],
+                            s = 0; s < I; j = z & 1 | j << 1,
+                            D == T - 1 ? (D = 0,
+                            R[FB(FO.s)](Q(j)),
+                            j = 0) : D++,
+                            z >>= 1,
+                            s++)
+                                ;
+                        x = (J--,
+                        0 == J && (J = Math[FB(FO.d)](2, I),
+                        I++),
+                        G[Z] = K++,
+                        String(C))
+                    }
+                if ('' !== x) {
+                    if (Object[FB(FO.J)][FB(FO.P)][FB(FO.U)](O, x)) {
+                        if (256 > x[FB(FO.x)](0)) {
+                            for (s = 0; s < I; j <<= 1,
+                            D == T - 1 ? (D = 0,
+                            R[FB(FO.g)](Q(j)),
+                            j = 0) : D++,
+                            s++)
+                                ;
+                            for (z = x[FB(FO.K)](0),
+                            s = 0; 8 > s; j = z & 1 | j << 1.25,
+                            D == T - 1 ? (D = 0,
+                            R[FB(FO.s)](Q(j)),
+                            j = 0) : D++,
+                            z >>= 1,
+                            s++)
+                                ;
+                        } else {
+                            for (z = 1,
+                            s = 0; s < I; j = z | j << 1.06,
+                            D == T - 1 ? (D = 0,
+                            R[FB(FO.I)](Q(j)),
+                            j = 0) : D++,
+                            z = 0,
+                            s++)
+                                ;
+                            for (z = x[FB(FO.G)](0),
+                            s = 0; 16 > s; j = j << 1 | 1.46 & z,
+                            T - 1 == D ? (D = 0,
+                            R[FB(FO.R)](Q(j)),
+                            j = 0) : D++,
+                            z >>= 1,
+                            s++)
+                                ;
+                        }
+                        J--,
+                        J == 0 && (J = Math[FB(FO.d)](2, I),
+                        I++),
+                        delete O[x]
+                    } else
+                        for (z = G[x],
+                        s = 0; s < I; j = 1 & z | j << 1,
+                        T - 1 == D ? (D = 0,
+                        R[FB(FO.R)](Q(j)),
+                        j = 0) : D++,
+                        z >>= 1,
+                        s++)
+                            ;
+                    J--,
+                    J == 0 && I++
+                }
+                for (z = 2,
+                s = 0; s < I; j = z & 1.84 | j << 1,
+                T - 1 == D ? (D = 0,
+                R[FB(FO.j)](Q(j)),
+                j = 0) : D++,
+                z >>= 1,
+                s++)
+                    ;
+                for (; ; )
+                    if (j <<= 1,
+                    T - 1 == D) {
+                        R[FB(FO.D)](Q(j));
+                        break
+                    } else
+                        D++;
+                return R[FB(FO.h)]('')
+            },
+            'j': function(U, Fx, Fn) {
+                return Fx = {
+                    n: 286
+                },
+                Fn = FF,
+                null == U ? '' : '' == U ? null : i.i(U[Fn(Fr.n)], 32768, function(T, Fa) {
+                    return Fa = Fn,
+                    U[Fa(Fx.n)](T)
+                })
+            },
+            'i': function(U, T, Q, Fi, s, G, O, x, J, K, I, R, j, D, E, C, z, Z) {
+                for (Fi = FF,
+                s = [],
+                G = 4,
+                O = 4,
+                x = 3,
+                J = [],
+                R = Q(0),
+                j = T,
+                D = 1,
+                K = 0; 3 > K; s[K] = K,
+                K += 1)
+                    ;
+                for (E = 0,
+                C = Math[Fi(Fd.n)](2, 2),
+                I = 1; C != I; Z = R & j,
+                j >>= 1,
+                j == 0 && (j = T,
+                R = Q(D++)),
+                E |= I * (0 < Z ? 1 : 0),
+                I <<= 1)
+                    ;
+                switch (E) {
+                case 0:
+                    for (E = 0,
+                    C = Math[Fi(Fd.n)](2, 8),
+                    I = 1; I != C; Z = j & R,
+                    j >>= 1,
+                    j == 0 && (j = T,
+                    R = Q(D++)),
+                    E |= I * (0 < Z ? 1 : 0),
+                    I <<= 1)
+                        ;
+                    z = a(E);
+                    break;
+                case 1:
+                    for (E = 0,
+                    C = Math[Fi(Fd.a)](2, 16),
+                    I = 1; C != I; Z = R & j,
+                    j >>= 1,
+                    j == 0 && (j = T,
+                    R = Q(D++)),
+                    E |= I * (0 < Z ? 1 : 0),
+                    I <<= 1)
+                        ;
+                    z = a(E);
+                    break;
+                case 2:
+                    return ''
+                }
+                for (K = s[3] = z,
+                J[Fi(Fd.i)](z); ; ) {
+                    if (D > U)
+                        return '';
+                    for (E = 0,
+                    C = Math[Fi(Fd.n)](2, x),
+                    I = 1; I != C; Z = j & R,
+                    j >>= 1,
+                    j == 0 && (j = T,
+                    R = Q(D++)),
+                    E |= (0 < Z ? 1 : 0) * I,
+                    I <<= 1)
+                        ;
+                    switch (z = E) {
+                    case 0:
+                        for (E = 0,
+                        C = Math[Fi(Fd.P)](2, 8),
+                        I = 1; I != C; Z = R & j,
+                        j >>= 1,
+                        0 == j && (j = T,
+                        R = Q(D++)),
+                        E |= I * (0 < Z ? 1 : 0),
+                        I <<= 1)
+                            ;
+                        s[O++] = a(E),
+                        z = O - 1,
+                        G--;
+                        break;
+                    case 1:
+                        for (E = 0,
+                        C = Math[Fi(Fd.U)](2, 16),
+                        I = 1; I != C; Z = R & j,
+                        j >>= 1,
+                        0 == j && (j = T,
+                        R = Q(D++)),
+                        E |= (0 < Z ? 1 : 0) * I,
+                        I <<= 1)
+                            ;
+                        s[O++] = a(E),
+                        z = O - 1,
+                        G--;
+                        break;
+                    case 2:
+                        return J[Fi(Fd.T)]('')
+                    }
+                    if (0 == G && (G = Math[Fi(Fd.Q)](2, x),
+                    x++),
+                    s[z])
+                        z = s[z];
+                    else if (O === z)
+                        z = K + K[Fi(Fd.s)](0);
+                    else
+                        return null;
+                    J[Fi(Fd.G)](z),
+                    s[O++] = K + z[Fi(Fd.s)](0),
+                    G--,
+                    K = z,
+                    0 == G && (G = Math[Fi(Fd.a)](2, x),
+                    x++)
+                }
+            }
+        },
+        P = {},
+        P[FF(Ft.a)] = i.h,
+        P
+    }(),
+    e();
+    function V(i, P, FZ, FH, U, T, Q) {
+        if (FZ = {
+            n: 335,
+            a: 267,
+            i: 342,
+            P: 329,
+            U: 295,
+            T: 341,
+            Q: 342,
+            s: 298,
+            G: 301,
+            O: 295,
+            x: 277,
+            d: 264,
+            J: 298,
+            g: 301
+        },
+        FH = F1,
+        U = FH(FZ.n),
+        !i[FH(FZ.a)])
+            return;
+        P === FH(FZ.i) ? (T = {},
+        T[FH(FZ.P)] = U,
+        T[FH(FZ.U)] = i.r,
+        T[FH(FZ.T)] = FH(FZ.Q),
+        y[FH(FZ.s)][FH(FZ.G)](T, '*')) : (Q = {},
+        Q[FH(FZ.P)] = U,
+        Q[FH(FZ.O)] = i.r,
+        Q[FH(FZ.T)] = FH(FZ.x),
+        Q[FH(FZ.d)] = P,
+        y[FH(FZ.J)][FH(FZ.g)](Q, '*'))
+    }
+    function M(B, n, a) {
+        return a = F(),
+        M = function(i, y, w) {
+            return i = i - 254,
+            w = a[i],
+            w
+        }
+        ,
+        M(B, n)
+    }
+    function b(n, i, Fv, F2) {
+        return Fv = {
+            n: 303,
+            a: 323,
+            i: 276,
+            P: 279,
+            U: 349,
+            T: 356
+        },
+        F2 = F1,
+        i instanceof n[F2(Fv.n)] && 0 < n[F2(Fv.n)][F2(Fv.a)][F2(Fv.i)][F2(Fv.P)](i)[F2(Fv.U)](F2(Fv.T))
+    }
+    function F(Fz) {
+        return Fz = 'Object,undefined,charAt,stringify,boolean,d.cookie,isNaN,bind,push,chctx,display: none,symbol,__CF$cv$params,now,isArray,DOMContentLoaded,document,clientInformation,/b/ov1/0.4567818147261026:1764876350:sYTeiSg2nrna_XSum8CPDi6KoWoWWODqzLGO6zBf2hY/,prototype,contentDocument,Array,chlApiSitekey,length,1626296eDjgnb,source,136aZPqxd,fromCharCode,msg,tabIndex,catch,cloudflare-invisible,6895052zaZnLN,cJDYB1,appendChild,navigator,iframe,event,success,nOoQFthDKdarZSHsz5Nfp$i2bUqW7Ewc4+-16AC9mVTMJLxy8eGRPkBgXvYI0j3lu,/invisible/jsd,open,pow,/cdn-cgi/challenge-platform/h/,log,indexOf,getOwnPropertyNames,ontimeout,href,onload,object,random,[native code],POST,_cf_chl_opt,XMLHttpRequest,Qgcf5,location,includes,removeChild,function,map,/jsd/oneshot/5eaf848a0845/0.4567818147261026:1764876350:sYTeiSg2nrna_XSum8CPDi6KoWoWWODqzLGO6zBf2hY/,loading,status,onerror,floor,readyState,join,gKwbC5,_cf_chl_opt;XQlKq9;mpuA2;BYBs3;bqzg9;gtpfA4;SZQFk7;rTYyd6;gTvhm6;ubgT9;JrBNE9;NgAVk0;YBjhw4;WvQh6;cJDYB1;Qgcf5;eHVD2;VJwN2,sort,62631VDuMqb,splice,style,addEventListener,15DNKqkY,body,keys,MJTio,detail,jsd,Set,api,10873408ZCJbGI,hhzn3,405746NAJCdB,contentWindow,getPrototypeOf,split,chlApiClientVersion,chlApiUrl,toString,error,5463012SKoHJw,call,http-code:,xhr-error,onreadystatechange,string,vKoX8,createElement,charCodeAt,bigint,timeout,gRjkt7,xkKZ4,2814880KqIhgv,concat,errorInfoObject,chlApiRumWidgetAgeMs,sid,from,send,parent,error on cf_chl_props,number,postMessage,hasOwnProperty,Function'.split(','),
+        F = function() {
+            return Fz
+        }
+        ,
+        F()
+    }
+    function m(FK, Ff, n, a, i) {
+        return FK = {
+            n: 370,
+            a: 317
+        },
+        Ff = F1,
+        n = 3600,
+        a = v(),
+        i = Math[Ff(FK.n)](Date[Ff(FK.a)]() / 1e3),
+        i - a > n ? ![] : !![]
+    }
+    function e(FC, Fl, Fh, FS, n, a, i, P, U) {
+        if (FC = {
+            n: 316,
+            a: 267,
+            i: 371,
+            P: 367,
+            U: 259,
+            T: 259,
+            Q: 319,
+            s: 282
+        },
+        Fl = {
+            n: 371,
+            a: 367,
+            i: 282
+        },
+        Fh = {
+            n: 299
+        },
+        FS = F1,
+        n = y[FS(FC.n)],
+        !n)
+            return;
+        if (!m())
+            return;
+        (a = ![],
+        i = n[FS(FC.a)] === !![],
+        P = function(FL, T) {
+            if (FL = FS,
+            !a) {
+                if (a = !![],
+                !m())
+                    return;
+                T = c(),
+                o(T.r, function(Q) {
+                    V(n, Q)
+                }),
+                T.e && N(FL(Fh.n), T.e)
+            }
+        }
+        ,
+        f[FS(FC.i)] !== FS(FC.P)) ? P() : y[FS(FC.U)] ? f[FS(FC.T)](FS(FC.Q), P) : (U = f[FS(FC.s)] || function() {}
+        ,
+        f[FS(FC.s)] = function(Fc) {
+            Fc = FS,
+            U(),
+            f[Fc(Fl.n)] !== Fc(Fl.a) && (f[Fc(Fl.i)] = U,
+            P())
+        }
+        )
+    }
+    function X(n, i, P, Fo, F3, U) {
+        F3 = (Fo = {
+            n: 334,
+            a: 325,
+            i: 318,
+            P: 325,
+            U: 364
+        },
+        F1);
+        try {
+            return i[P][F3(Fo.n)](function() {}),
+            'p'
+        } catch (T) {}
+        try {
+            if (i[P] == null)
+                return void 0 === i[P] ? 'u' : 'x'
+        } catch (Q) {
+            return 'i'
+        }
+        return n[F3(Fo.a)][F3(Fo.i)](i[P]) ? 'a' : i[P] === n[F3(Fo.P)] ? 'E' : !0 === i[P] ? 'T' : i[P] === !1 ? 'F' : (U = typeof i[P],
+        F3(Fo.U) == U ? b(n, i[P]) ? 'N' : 'f' : k[U] || '?')
+    }
+    function A(n, FN, F4, i) {
+        for (FN = {
+            n: 292,
+            a: 262,
+            i: 272
+        },
+        F4 = F1,
+        i = []; null !== n; i = i[F4(FN.n)](Object[F4(FN.a)](n)),
+        n = Object[F4(FN.i)](n))
+            ;
+        return i
+    }
+    function v(Fg, Fw, n) {
+        return Fg = {
+            n: 316,
+            a: 370
+        },
+        Fw = F1,
+        n = y[Fw(Fg.n)],
+        Math[Fw(Fg.a)](+atob(n.t))
+    }
+    function N(P, U, Fp, FA, T, Q, s, G, O, x, d, J) {
+        if (Fp = {
+            n: 332,
+            a: 277,
+            i: 316,
+            P: 347,
+            U: 358,
+            T: 290,
+            Q: 322,
+            s: 344,
+            G: 359,
+            O: 345,
+            x: 357,
+            d: 288,
+            J: 351,
+            g: 326,
+            K: 358,
+            I: 284,
+            R: 275,
+            j: 373,
+            D: 294,
+            h: 358,
+            E: 269,
+            l: 274,
+            C: 289,
+            Z: 293,
+            z: 313,
+            FD: 329,
+            Fh: 265,
+            FE: 297,
+            Fl: 263
+        },
+        FA = F1,
+        !Y(.01))
+            return ![];
+        Q = (T = {},
+        T[FA(Fp.n)] = P,
+        T[FA(Fp.a)] = U,
+        T);
+        try {
+            s = y[FA(Fp.i)],
+            G = FA(Fp.P) + y[FA(Fp.U)][FA(Fp.T)] + FA(Fp.Q) + s.r + FA(Fp.s),
+            O = new y[(FA(Fp.G))](),
+            O[FA(Fp.O)](FA(Fp.x), G),
+            O[FA(Fp.d)] = 2500,
+            O[FA(Fp.J)] = function() {}
+            ,
+            x = {},
+            x[FA(Fp.g)] = y[FA(Fp.K)][FA(Fp.I)],
+            x[FA(Fp.R)] = y[FA(Fp.K)][FA(Fp.j)],
+            x[FA(Fp.D)] = y[FA(Fp.h)][FA(Fp.E)],
+            x[FA(Fp.l)] = y[FA(Fp.U)][FA(Fp.C)],
+            d = x,
+            J = {},
+            J[FA(Fp.Z)] = Q,
+            J[FA(Fp.z)] = d,
+            J[FA(Fp.FD)] = FA(Fp.Fh),
+            O[FA(Fp.FE)](H[FA(Fp.Fl)](J))
+        } catch (g) {}
+    }
+    function Y(n, FJ, Fy) {
+        return FJ = {
+            n: 355
+        },
+        Fy = F1,
+        Math[Fy(FJ.n)]() < n
+    }
+    function o(n, a, Fu, Fj, FR, FI, FW, i, P, U) {
+        Fu = {
+            n: 316,
+            a: 348,
+            i: 358,
+            P: 359,
+            U: 345,
+            T: 357,
+            Q: 347,
+            s: 290,
+            G: 366,
+            O: 267,
+            x: 288,
+            d: 351,
+            J: 353,
+            g: 369,
+            K: 361,
+            I: 352,
+            R: 352,
+            j: 297,
+            D: 263,
+            h: 307
+        },
+        Fj = {
+            n: 281
+        },
+        FR = {
+            n: 368,
+            a: 368,
+            i: 342,
+            P: 280
+        },
+        FI = {
+            n: 288
+        },
+        FW = F1,
+        i = y[FW(Fu.n)],
+        console[FW(Fu.a)](y[FW(Fu.i)]),
+        P = new y[(FW(Fu.P))](),
+        P[FW(Fu.U)](FW(Fu.T), FW(Fu.Q) + y[FW(Fu.i)][FW(Fu.s)] + FW(Fu.G) + i.r),
+        i[FW(Fu.O)] && (P[FW(Fu.x)] = 5e3,
+        P[FW(Fu.d)] = function(Fk) {
+            Fk = FW,
+            a(Fk(FI.n))
+        }
+        ),
+        P[FW(Fu.J)] = function(Fb) {
+            Fb = FW,
+            P[Fb(FR.n)] >= 200 && P[Fb(FR.a)] < 300 ? a(Fb(FR.i)) : a(Fb(FR.P) + P[Fb(FR.n)])
+        }
+        ,
+        P[FW(Fu.g)] = function(FX) {
+            FX = FW,
+            a(FX(Fj.n))
+        }
+        ,
+        U = {
+            't': v(),
+            'lhr': f[FW(Fu.K)] && f[FW(Fu.K)][FW(Fu.I)] ? f[FW(Fu.K)][FW(Fu.R)] : '',
+            'api': i[FW(Fu.O)] ? !![] : ![],
+            'payload': n
+        },
+        P[FW(Fu.j)](H[FW(Fu.D)](JSON[FW(Fu.h)](U)))
+    }
+    function c(FQ, F9, i, P, U, T, Q) {
+        F9 = (FQ = {
+            n: 285,
+            a: 340,
+            i: 258,
+            P: 314,
+            U: 333,
+            T: 261,
+            Q: 338,
+            s: 271,
+            G: 321,
+            O: 339,
+            x: 324,
+            d: 363
+        },
+        F1);
+        try {
+            return i = f[F9(FQ.n)](F9(FQ.a)),
+            i[F9(FQ.i)] = F9(FQ.P),
+            i[F9(FQ.U)] = '-1',
+            f[F9(FQ.T)][F9(FQ.Q)](i),
+            P = i[F9(FQ.s)],
+            U = {},
+            U = cJDYB1(P, P, '', U),
+            U = cJDYB1(P, P[F9(FQ.G)] || P[F9(FQ.O)], 'n.', U),
+            U = cJDYB1(P, i[F9(FQ.x)], 'd.', U),
+            f[F9(FQ.T)][F9(FQ.d)](i),
+            T = {},
+            T.r = U,
+            T.e = null,
+            T
+        } catch (s) {
+            return Q = {},
+            Q.r = {},
+            Q.e = s,
+            Q
+        }
+    }
+}()
+
+
+
+
+
