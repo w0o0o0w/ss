@@ -1,0 +1,1145 @@
+class StationsManager {
+  constructor() {
+    this.apiEndpoint = '/api.php';
+    this.stations = [];
+    this.refreshInterval = 5 * 60 * 1000;
+    this.lastFetchTime = 0;
+    this.currentProvinceId = null;
+    this.minFetchInterval = 30 * 1000;
+    this.lastVisibilityChange = Date.now();
+    this.staleDataThreshold = 15 * 60 * 1000;
+    this.refreshTimeout = null;
+    this.fetchPromise = null; // Track ongoing fetch
+
+    // Client-side cache for API responses (in-memory, session-only)
+    this.provinceDataCache = {};
+    this.cacheTimeout = 10 * 60 * 1000; // 10 minutes cache per province
+  }
+
+  toggleRefreshIndicator(show) {
+    const indicator = document.getElementById('refresh-indicator');
+    if (indicator) indicator.classList.toggle('hidden', !show);
+  }
+
+  toggleElement(id, show) {
+    const element = document.getElementById(id);
+    if (element) element.style.display = show ? 'block' : 'none';
+  }
+
+  getCachedData(provinceId) {
+    const cached = this.provinceDataCache[provinceId];
+    if (!cached) return null;
+
+    const now = Date.now();
+    if (now - cached.timestamp > this.cacheTimeout) {
+      delete this.provinceDataCache[provinceId];
+      return null;
+    }
+
+    return cached.data;
+  }
+
+  setCachedData(provinceId, data) {
+    this.provinceDataCache[provinceId] = {
+      data: data,
+      timestamp: Date.now()
+    };
+  }
+
+  async fetchStations(showIndicator = false, force = false) {
+    if (this.fetchPromise) {
+      return this.fetchPromise;
+    }
+
+    const fetchTask = (async () => {
+      try {
+        const now = Date.now();
+        const stateId = (typeof ProvinceManager !== 'undefined' && ProvinceManager.getCurrentProvince())
+          ? ProvinceManager.getCurrentProvince().id
+          : 2;
+
+        const provinceChanged = this.currentProvinceId !== null && this.currentProvinceId !== stateId;
+
+        if (!force && !provinceChanged && now - this.lastFetchTime < this.minFetchInterval) {
+          if (this.stations.length > 0 && this.currentProvinceId === stateId) {
+            this.renderStations();
+            this.updateFooter(this.getLatestStationTimestamp(this.stations));
+          }
+          return;
+        }
+
+        // Check client-side cache first (unless forcing refresh)
+        if (!force) {
+          const cachedData = this.getCachedData(stateId);
+          if (cachedData) {
+            const stations = cachedData.stations || cachedData;
+            const cityAvgAqi = cachedData.city_avg_aqi || null;
+
+            this.stations = stations;
+            this.currentProvinceId = stateId;
+
+            if (cityAvgAqi !== null && typeof ProvinceManager !== 'undefined') {
+              ProvinceManager.setCityAvgAqi(stateId, cityAvgAqi);
+            }
+
+            this.renderStations();
+            this.updateFooter(this.getLatestStationTimestamp(stations));
+            this.toggleElement('error-message', false);
+            return;
+          }
+        }
+
+        this.lastFetchTime = now;
+        this.currentProvinceId = stateId;
+
+      if (showIndicator) this.toggleRefreshIndicator(true);
+
+      const controller = new AbortController();
+      this.refreshTimeout = setTimeout(() => {
+        controller.abort();
+        this.toggleRefreshIndicator(false);
+      }, 35000);
+
+      const cacheParam = force ? `&nocache=${Date.now()}` : '';
+      const response = await fetch(`${this.apiEndpoint}?action=stations&state=${stateId}${cacheParam}`, {
+        signal: controller.signal,
+        credentials: 'include',
+        headers: {
+          'X-CSRF-Token': window.CSRF_TOKEN || '',
+          'Cache-Control': force ? 'no-cache' : 'default'
+        }
+      });
+      clearTimeout(this.refreshTimeout);
+
+      if (response.status === 403) {
+        window.location.reload();
+        return;
+      }
+
+      if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+
+      const data = await response.json();
+
+      if (data.status === 'success' && data.data) {
+        // Handle new data structure with stations and city_avg_aqi
+        const stations = data.data.stations || data.data;
+        const cityAvgAqi = data.data.city_avg_aqi || null;
+
+        this.stations = stations;
+
+        // Store in client-side cache
+        this.setCachedData(stateId, data.data);
+
+        // Store city average AQI for current province
+        if (cityAvgAqi !== null && typeof ProvinceManager !== 'undefined') {
+          const currentProvinceId = ProvinceManager.getCurrentProvinceId();
+          ProvinceManager.setCityAvgAqi(currentProvinceId, cityAvgAqi);
+        }
+
+        this.renderStations();
+        this.updateFooter(this.getLatestStationTimestamp(stations));
+        this.toggleElement('error-message', false);
+      } else {
+        this.showError(data.message || 'خطا در دریافت داده‌ها از سرور');
+      }
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          this.showError('زمان اتصال به سرور تمام شد. لطفا دوباره تلاش کنید.');
+        } else {
+          this.showError('خطا در برقراری ارتباط با سرور');
+        }
+      } finally {
+        if (showIndicator) setTimeout(() => this.toggleRefreshIndicator(false), 500);
+      }
+    })();
+
+    // Store promise and clear it when done
+    this.fetchPromise = fetchTask;
+    fetchTask.finally(() => {
+      this.fetchPromise = null;
+    });
+
+    return fetchTask;
+  }
+
+  getDisplayedStationId() {
+    if (StationSelector.selectedStationId) {
+      return parseInt(StationSelector.selectedStationId);
+    }
+
+    if (LocationManager.userLocation && this.stations.length > 0) {
+      const sorted = [...this.stations].filter(s => s.latitude && s.longitude).sort((a, b) => {
+        const distA = LocationManager.calculateDistance(
+          LocationManager.userLocation.latitude,
+          LocationManager.userLocation.longitude,
+          a.latitude, a.longitude
+        );
+        const distB = LocationManager.calculateDistance(
+          LocationManager.userLocation.latitude,
+          LocationManager.userLocation.longitude,
+          b.latitude, b.longitude
+        );
+        return distA - distB;
+      });
+      return sorted.length > 0 ? parseInt(sorted[0].id) : null;
+    }
+
+    return null;
+  }
+
+  getReferenceLocation() {
+    if (typeof LocationManager === 'undefined') return null;
+
+    if (typeof StationSelector !== 'undefined' && StationSelector.selectedStationId) {
+      const selectedStation = this.stations.find(s => parseInt(s.id) === StationSelector.selectedStationId);
+      if (selectedStation?.latitude && selectedStation?.longitude) {
+        return { latitude: selectedStation.latitude, longitude: selectedStation.longitude };
+      }
+    }
+
+    return LocationManager.userLocation || null;
+  }
+
+  sortStationsByDistance(stations, refLocation) {
+    return [...stations].sort((a, b) => {
+      if (!a.latitude || !a.longitude) return 1;
+      if (!b.latitude || !b.longitude) return -1;
+
+      const distA = LocationManager.calculateDistance(
+        refLocation.latitude, refLocation.longitude,
+        a.latitude, a.longitude
+      );
+      const distB = LocationManager.calculateDistance(
+        refLocation.latitude, refLocation.longitude,
+        b.latitude, b.longitude
+      );
+      return distA - distB;
+    });
+  }
+
+  renderStations() {
+    const container = document.getElementById('stations-container');
+    if (!container) return;
+
+    this.toggleElement('loading', false);
+
+    if (this.stations.length === 0) {
+      this.toggleElement('no-data', true);
+      return;
+    }
+
+    this.toggleElement('no-data', false);
+    container.innerHTML = '';
+
+    const referenceLocation = this.getReferenceLocation();
+    const displayedStationId = this.getDisplayedStationId();
+
+    let stationsToRender = referenceLocation
+      ? this.sortStationsByDistance(this.stations, referenceLocation)
+      : this.stations;
+
+    stationsToRender.forEach(station => {
+      if (station.aqi === null || station.aqi === undefined) return;
+      if (displayedStationId && parseInt(station.id) === displayedStationId) return;
+
+      container.appendChild(this.createStationCard(station));
+    });
+
+    if (typeof StationSelector !== 'undefined') {
+      StationSelector.allStations = this.stations;
+    }
+
+    this.displayClosestOrSelectedStation();
+  }
+
+  displayClosestOrSelectedStation() {
+    if (StationSelector.selectedStationId) {
+      const selectedStation = this.stations.find(s => parseInt(s.id) === StationSelector.selectedStationId);
+      if (selectedStation) {
+        LocationManager.displayClosestStation(selectedStation, true);
+        StationSelector.attachChangeStationButtonListener();
+      }
+      return;
+    }
+
+    if (LocationManager.userLocation) {
+      const closestStation = LocationManager.findClosestStation(this.stations);
+      if (closestStation) {
+        LocationManager.displayClosestStation(closestStation, false);
+        StationSelector.attachChangeStationButtonListener();
+      }
+    } else {
+      const handleLocationReady = () => {
+        this.renderStations();
+        document.removeEventListener('locationReady', handleLocationReady);
+      };
+      document.addEventListener('locationReady', handleLocationReady);
+      setTimeout(() => document.removeEventListener('locationReady', handleLocationReady), 15000);
+    }
+  }
+
+  createStationCard(station) {
+    const card = document.createElement('div');
+    card.className = 'station-card';
+
+    const aqiClass = Utils.getAQIClass(station.aqi);
+    const aqiLabel = Utils.getAQILabel(station.aqi);
+
+    const pollutants = ['pm25', 'pm10', 'no2', 'o3', 'so2', 'co'];
+    const pollutantUnits = { pm25: 'µg/m³', pm10: 'µg/m³', no2: 'ppb', o3: 'ppb', so2: 'ppb', co: 'ppm' };
+    const pollutantLabels = { pm25: 'PM2.5', pm10: 'PM10', no2: 'NO₂', o3: 'O₃', so2: 'SO₂', co: 'CO' };
+
+    let pollutantsHtml = '<div class="space-y-3 pt-4 border-t border-gray-100">';
+    pollutants.forEach(key => {
+      if (station[key] !== null && station[key] !== undefined) {
+        pollutantsHtml += `<div class="flex items-center justify-between"><span class="text-sm text-gray-600">${pollutantLabels[key]}</span><span class="font-semibold">${Utils.formatNumber(station[key])} ${pollutantUnits[key]}</span></div>`;
+      }
+    });
+    pollutantsHtml += '</div>';
+
+    card.innerHTML = `
+      <h3 class="text-lg font-bold text-gray-900 mb-4">${this.escapeHtml(Utils.toPersian(station.name))}</h3>
+      <div class="flex items-center justify-between mb-4">
+        <div class="aqi-badge ${aqiClass}">
+          ${Utils.toPersian(station.aqi !== null && station.aqi !== undefined ? Math.round(station.aqi) : '—')}
+        </div>
+        <div class="text-right">
+          <p class="text-xs text-gray-500">شاخص کیفیت هوا</p>
+          <p class="text-sm font-semibold text-gray-900">${aqiLabel}</p>
+        </div>
+      </div>
+      ${pollutantsHtml}
+    `;
+
+    return card;
+  }
+
+  getTimeAgo(timestamp) {
+    const seconds = Math.floor((Date.now() - new Date(timestamp)) / 1000);
+    if (seconds < 60) return 'الآن';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return Utils.toPersian(minutes) + ' دقیقه پیش';
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return Utils.toPersian(hours) + ' ساعت پیش';
+    return Utils.toPersian(Math.floor(hours / 24)) + ' روز پیش';
+  }
+
+  showError(message) {
+    const errorContainer = document.getElementById('error-message');
+    const errorText = document.getElementById('error-text');
+
+    if (errorContainer && errorText) {
+      errorText.textContent = message;
+      this.toggleElement('error-message', true);
+      this.toggleElement('loading', false);
+    }
+  }
+
+  updateFooter(timestamp) {
+    if (!timestamp) return;
+
+    const date = new Date(timestamp);
+    const timeAgo = this.getTimeAgo(timestamp);
+    const persianTime = date.toLocaleString('fa-IR');
+    const updateText = `آخرین به‌روزرسانی: ${timeAgo} | ${persianTime}`;
+    const footerElements = [
+      'last-update',
+      'last-update-desktop',
+      'mobile-last-update'
+    ];
+    
+    footerElements.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = updateText;
+    });
+  }
+
+  getLatestStationTimestamp(stations) {
+    if (!stations || stations.length === 0) return new Date().toISOString();
+
+    let latestTimestamp = null;
+    for (const station of stations) {
+      if (station.timestamp) {
+        const stationTime = new Date(station.timestamp).getTime();
+        if (!latestTimestamp || stationTime > latestTimestamp) {
+          latestTimestamp = stationTime;
+        }
+      }
+    }
+
+    return latestTimestamp ? new Date(latestTimestamp).toISOString() : new Date().toISOString();
+  }
+
+  escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  handleVisibilityChange() {
+    if (document.visibilityState === 'visible') {
+      const timeSinceLastVisibility = Date.now() - this.lastVisibilityChange;
+      if (timeSinceLastVisibility > this.staleDataThreshold) {
+        this.fetchStations(true);
+      }
+      this.lastVisibilityChange = Date.now();
+    } else {
+      this.lastVisibilityChange = Date.now();
+    }
+  }
+
+  init() {
+    const forceRefresh = sessionStorage.getItem('forceDataRefreshAfterUpdate') === 'true';
+    if (forceRefresh) {
+      sessionStorage.removeItem('forceDataRefreshAfterUpdate');
+      this.fetchStations(true, true);
+    } else {
+      this.fetchStations();
+    }
+    setInterval(() => this.fetchStations(), this.refreshInterval);
+
+    document.addEventListener('stationChanged', () => {
+      if (this.stations.length > 0) {
+        setTimeout(() => this.renderStations(false), 0);
+      }
+    });
+
+    document.addEventListener('visibilitychange', () => this.handleVisibilityChange());
+    window.addEventListener('focus', () => this.handleVisibilityChange());
+  }
+}
+
+class WeatherManager {
+  constructor() {
+    this.apiEndpoint = AppConfig.API.ENDPOINT;
+    this.refreshInterval = AppConfig.CACHE.REFRESH_INTERVAL;
+    this.minFetchInterval = AppConfig.CACHE.STATION_THROTTLE;
+    this.lastFetchTime = 0;
+    this.allStations = [];
+    this.currentTab = 'aqi';
+    this.compactWidgetData = null;
+    this.initialized = false;
+    this.refreshIntervalId = null;
+  }
+
+  async fetchWeatherAPI(action, cacheBuster = '') {
+    const csrfToken = window.CSRF_TOKEN;
+    if (!csrfToken) {
+      throw new Error('CSRF token not found');
+    }
+
+    const response = await fetch(`${this.apiEndpoint}?action=${action}${cacheBuster}`, {
+      credentials: 'include',
+      headers: { 'X-CSRF-Token': csrfToken }
+    });
+
+    if (response.status === 403) {
+      window.location.reload();
+      return null;
+    }
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  async fetchAllWeather(force = false) {
+    const now = Date.now();
+    if (!force && now - this.lastFetchTime < this.minFetchInterval) return;
+
+    this.lastFetchTime = now;
+
+    try {
+      const cacheBuster = force ? `&t=${Date.now()}` : '';
+      const result = await this.fetchWeatherAPI('weather', cacheBuster);
+
+      if (result && result.status === 'success' && result.data) {
+        this.allStations = result.data;
+        this.renderWeatherStations();
+
+        if (ProvinceManager.getCurrentProvince().id === 2) {
+          this.fetchCompactWidget();
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch weather:', error.message || error);
+      this.toggleElements('weather-loading', false, 'weather-no-data', true);
+    }
+  }
+
+  async fetchCompactWidget() {
+    try {
+      const result = await this.fetchWeatherAPI('weather-tehran-city');
+      if (result && result.status === 'success' && result.data) {
+        this.compactWidgetData = result.data;
+        this.renderCompactWidget(result.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch compact weather:', error);
+    }
+  }
+
+  toggleElements(loadingId, showLoading, noDataId, showNoData) {
+    const loading = document.getElementById(loadingId);
+    const noData = document.getElementById(noDataId);
+    if (loading) loading.classList.toggle('hidden', !showLoading);
+    if (noData) noData.classList.toggle('hidden', !showNoData);
+  }
+
+  static createWeatherFooterHTML() {
+    return `
+      <div class="relative">
+        <button id="view-weather-btn" class="absolute -bottom-2 -left-2 px-2 sm:px-3 py-1 sm:py-1.5 bg-white/20 hover:bg-white/30 rounded-lg transition-colors text-xs sm:text-sm font-semibold" title="مشاهده گزارش کامل آب و هوا">
+          <i class="fas fa-cloud-sun"></i>
+        </button>
+        <div class="flex items-center justify-center gap-4 sm:gap-6 pb-2">
+          <div class="text-center">
+            <p class="text-5xl sm:text-6xl font-bold text-gray-900 dark:text-white mb-1"><span id="weather-footer-temp">—</span>°</p>
+            <p class="text-xs text-gray-600 dark:text-gray-300 opacity-70">دمای هوا</p>
+          </div>
+          <div class="w-px h-16 bg-gray-300 dark:bg-white/20"></div>
+          <div>
+            <div class="flex items-center gap-2 sm:gap-3 mb-3">
+              <i id="weather-footer-icon" class="fas fa-cloud text-3xl sm:text-4xl text-blue-500 dark:text-blue-400 flex-shrink-0"></i>
+              <p id="weather-footer-status" class="text-sm sm:text-base font-medium text-gray-900 dark:text-white">—</p>
+            </div>
+            <div class="flex gap-4 text-xs text-gray-600 dark:text-gray-300 opacity-75">
+              <span><i class="fas fa-droplet text-blue-500 dark:text-blue-300"></i> <span id="weather-footer-humidity-label">—</span></span>
+              <span><i class="fas fa-wind text-blue-500 dark:text-blue-300"></i> <span id="weather-footer-wind-label">—</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  renderCompactWidget(data) {
+    const footer = document.getElementById('weather-footer');
+    if (!footer) return;
+
+    const isTehran = ProvinceManager.getCurrentProvince().id === 2;
+    footer.classList.toggle('hidden', !isTehran);
+    if (!isTehran) return;
+
+    const formattedData = {
+      'weather-footer-temp': this.formatValue(data.temperature, Math.round),
+      'weather-footer-status': data.weather_description || '—',
+      'weather-footer-humidity-label': data.humidity !== null ? `${this.formatValue(data.humidity, Math.round)}%` : '—',
+      'weather-footer-wind-label': data.wind_speed !== null ? `${this.formatValue(data.wind_speed, Math.round)} m/s` : '—'
+    };
+
+    Object.entries(formattedData).forEach(([id, content]) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = content;
+    });
+
+    const iconEl = document.getElementById('weather-footer-icon');
+    if (iconEl) {
+      iconEl.className = `fas ${this.getWeatherIcon(data.weather_description)} text-4xl text-blue-500 dark:text-blue-400`;
+    }
+
+    // Track weather widget view
+    window.trackEvent?.('weather_widget_viewed', {
+      temperature: data.temperature,
+      weather_condition: data.weather_description,
+      humidity: data.humidity,
+      wind_speed: data.wind_speed
+    });
+  }
+
+  getWeatherIcon(description) {
+    if (!description) return 'fa-cloud';
+    const desc = description.toLowerCase();
+    const iconMap = [
+      { keywords: ['صاف', 'آفتابی', 'روز', 'sunny'], icon: 'fa-sun' },
+      { keywords: ['بارانی', 'باران', 'rain'], icon: 'fa-cloud-rain' },
+      { keywords: ['برفانی', 'برف', 'snow'], icon: 'fa-snowflake' },
+      { keywords: ['طوفانی', 'thunder'], icon: 'fa-bolt' },
+      { keywords: ['مه', 'fog'], icon: 'fa-smog' },
+      { keywords: ['ابری', 'cloud'], icon: 'fa-cloud' }
+    ];
+
+    for (const { keywords, icon } of iconMap) {
+      if (keywords.some(keyword => desc.includes(keyword))) return icon;
+    }
+    return 'fa-cloud';
+  }
+
+  getWeatherReferenceLocation() {
+    // Priority 1: Selected AQI station location
+    if (typeof StationSelector !== 'undefined' && StationSelector.selectedStationId && typeof stationsManagerInstance !== 'undefined') {
+      const selectedStation = stationsManagerInstance.stations.find(
+        s => parseInt(s.id) === StationSelector.selectedStationId
+      );
+      if (selectedStation?.latitude && selectedStation?.longitude) {
+        return {
+          latitude: parseFloat(selectedStation.latitude),
+          longitude: parseFloat(selectedStation.longitude)
+        };
+      }
+    }
+
+    // Priority 2: User's real location
+    if (typeof LocationManager !== 'undefined' && LocationManager.userLocation) {
+      return LocationManager.userLocation;
+    }
+
+    // Priority 3: Tehran center from config
+    const tehranProvince = typeof PROVINCES !== 'undefined' ? PROVINCES[2] : null;
+    if (tehranProvince?.center) {
+      return tehranProvince.center;
+    }
+
+    // Fallback: hardcoded Tehran center
+    return { latitude: 35.6679, longitude: 51.4321 };
+  }
+
+  sortWeatherStationsByDistance(stations) {
+    const refLocation = this.getWeatherReferenceLocation();
+
+    return [...stations].sort((a, b) => {
+      const aLat = parseFloat(a.lat);
+      const aLon = parseFloat(a.lon);
+      const bLat = parseFloat(b.lat);
+      const bLon = parseFloat(b.lon);
+
+      if (!aLat || !aLon) return 1;
+      if (!bLat || !bLon) return -1;
+
+      const distA = Utils.calculateDistance(
+        refLocation.latitude,
+        refLocation.longitude,
+        aLat,
+        aLon
+      );
+      const distB = Utils.calculateDistance(
+        refLocation.latitude,
+        refLocation.longitude,
+        bLat,
+        bLon
+      );
+
+      return distA - distB;
+    });
+  }
+
+  renderWeatherStations() {
+    const container = document.getElementById('weather-stations-container');
+    const loading = document.getElementById('weather-loading');
+
+    if (!container) return;
+
+    loading.classList.add('hidden');
+    container.innerHTML = '';
+
+    const validStations = this.allStations.filter(station =>
+      station.temperature !== null && station.temperature !== undefined
+    );
+
+    if (validStations.length === 0) {
+      document.getElementById('weather-no-data').classList.remove('hidden');
+      return;
+    }
+
+    const sortedStations = this.sortWeatherStationsByDistance(validStations);
+
+    sortedStations.forEach(station => {
+      const card = this.createWeatherCard(station);
+      container.appendChild(card);
+    });
+  }
+
+  createWeatherCard(station) {
+    const card = document.createElement('div');
+    card.className = 'bg-white dark:bg-gray-800 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border border-gray-100 dark:border-gray-700';
+
+    const data = {
+      temp: this.formatValue(station.temperature, Math.round),
+      tempMin: this.formatValue(station.temp_min, Math.round),
+      tempMax: this.formatValue(station.temp_max, Math.round),
+      humidity: this.formatValue(station.humidity, Math.round),
+      wind: this.formatValue(station.wind_speed, v => parseFloat(v).toFixed(1)),
+      windDir: station.wind_direction !== null ? this.getWindDirection(station.wind_direction) : '',
+      pressure: this.formatValue(station.pressure, Math.round),
+      precipitation: station.precipitation_24h !== null ? Utils.toPersian(parseFloat(station.precipitation_24h).toFixed(1)) : '۰'
+    };
+
+    const metrics = [
+      { icon: 'fa-droplet', value: data.humidity + '%', label: 'رطوبت' },
+      { icon: 'fa-wind', value: data.wind, label: `باد ${data.windDir}` },
+      { icon: 'fa-gauge-high', value: data.pressure, label: 'فشار (hPa)' },
+      { icon: 'fa-cloud-rain', value: data.precipitation, label: 'بارش (mm)' }
+    ];
+
+    card.innerHTML = `
+      <div class="mb-5">
+        <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+          <i class="fas fa-location-dot text-blue-500 dark:text-blue-400 text-base"></i>
+          ${station.station}
+        </h3>
+        ${station.weather_description ? `<p class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">${station.weather_description}</p>` : ''}
+      </div>
+
+      <div class="mb-6 text-center">
+        <div class="inline-flex items-baseline gap-2 mb-2">
+          <span class="text-6xl font-bold text-gray-900 dark:text-white">${data.temp}</span>
+          <span class="text-3xl font-light text-gray-500 dark:text-gray-400">°C</span>
+        </div>
+        <div class="flex items-center justify-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+          <span><i class="fas fa-arrow-up text-xs"></i> ${data.tempMax}°</span>
+          <span class="text-gray-300 dark:text-gray-600">|</span>
+          <span><i class="fas fa-arrow-down text-xs"></i> ${data.tempMin}°</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        ${metrics.map(m => this.createMetricCard(m)).join('')}
+      </div>
+
+      <div class="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
+        <p class="text-xs text-gray-500 dark:text-gray-400 text-center">
+          <i class="fas fa-clock text-xs"></i>
+          ${station.data_time ? this.formatDateTime(station.data_time) : '—'}
+        </p>
+      </div>
+    `;
+
+    return card;
+  }
+
+  formatValue(value, formatter = Math.round) {
+    return value !== null ? Utils.toPersian(formatter(value)) : '—';
+  }
+
+  createMetricCard(metric) {
+    const { icon, value, label } = metric;
+    return `
+      <div class="text-center p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
+        <i class="fas ${icon} text-blue-500 dark:text-blue-400 text-lg mb-2"></i>
+        <p class="text-2xl font-semibold text-gray-900 dark:text-white mb-1">${value}</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400">${label}</p>
+      </div>
+    `;
+  }
+
+  getWindDirection(degree) {
+    if (degree === null) return '';
+    const deg = parseFloat(degree);
+    const directions = ['شمال', 'شمال‌شرق', 'شرق', 'جنوب‌شرق', 'جنوب', 'جنوب‌غرب', 'غرب', 'شمال‌غرب'];
+    const index = Math.round(deg / 45) % 8;
+    return directions[index];
+  }
+
+  formatVisibility(meters) {
+    const m = parseFloat(meters);
+    if (m >= 1000) {
+      return Utils.toPersian((m / 1000).toFixed(1)) + ' km';
+    }
+    return Utils.toPersian(Math.round(m)) + ' m';
+  }
+
+  formatDateTime(dateTimeStr) {
+    try {
+      const date = new Date(dateTimeStr);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / 60000);
+
+      if (diffMins < 60) {
+        return Utils.toPersian(diffMins) + ' دقیقه پیش';
+      } else if (diffMins < 1440) {
+        const hours = Math.floor(diffMins / 60);
+        return Utils.toPersian(hours) + ' ساعت پیش';
+      }
+      return date.toLocaleString('fa-IR', {
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (e) {
+      return dateTimeStr;
+    }
+  }
+
+  setupTabs() {
+    const tabButtons = document.querySelectorAll('.tab-button');
+    const bottomTabs = document.getElementById('bottom-tabs');
+    const desktopWeatherBtn = document.getElementById('desktop-weather-btn');
+    const desktopMapBtn = document.getElementById('desktop-map-btn');
+    const weatherTabBtn = document.getElementById('tab-weather');
+
+    const isTehran = ProvinceManager.getCurrentProvince().id === 2;
+
+    bottomTabs.classList.remove('hidden');
+    document.body.classList.add('has-bottom-tabs');
+
+    if (desktopMapBtn) {
+      desktopMapBtn.style.display = '';
+    }
+
+    if (isTehran) {
+      if (desktopWeatherBtn) {
+        desktopWeatherBtn.style.display = '';
+      }
+      if (weatherTabBtn) {
+        weatherTabBtn.classList.remove('hidden');
+      }
+      const tabsContainer = bottomTabs.querySelector('.grid');
+      if (tabsContainer) {
+        tabsContainer.classList.remove('grid-cols-2');
+        tabsContainer.classList.add('grid-cols-3');
+      }
+    } else {
+      if (desktopWeatherBtn) {
+        desktopWeatherBtn.style.display = 'none';
+      }
+      if (weatherTabBtn) {
+        weatherTabBtn.classList.add('hidden');
+      }
+      const tabsContainer = bottomTabs.querySelector('.grid');
+      if (tabsContainer) {
+        tabsContainer.classList.remove('grid-cols-3');
+        tabsContainer.classList.add('grid-cols-2');
+      }
+      if (this.currentTab === 'weather') {
+        this.switchTab('aqi');
+      }
+    }
+
+    tabButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        const targetTab = button.dataset.tab;
+        this.switchTab(targetTab);
+      });
+    });
+  }
+
+  switchTab(tabName) {
+    this.currentTab = tabName;
+
+    // Track tab switch in GA4
+    window.trackEvent?.('tab_switched', {
+      tab_name: tabName,
+      previous_tab: this.currentTab,
+      province_id: typeof ProvinceManager !== 'undefined' ? ProvinceManager.getCurrentProvince().id : null
+    });
+
+    document.querySelectorAll('.tab-section').forEach(section => {
+      section.classList.remove('active-tab');
+      section.classList.add('hidden');
+    });
+
+    document.querySelectorAll('.tab-button').forEach(button => {
+      button.classList.remove('active');
+    });
+
+    const targetSection = document.querySelector(`.tab-section[data-tab="${tabName}"]`);
+    if (targetSection) {
+      targetSection.classList.remove('hidden');
+      targetSection.classList.add('active-tab');
+    }
+
+    const activeButton = document.querySelector(`.tab-button[data-tab="${tabName}"]`);
+    if (activeButton) {
+      activeButton.classList.add('active');
+    }
+
+    if (tabName === 'map' && typeof mapManagerInstance !== 'undefined' && mapManagerInstance) {
+      setTimeout(async () => {
+        if (mapManagerInstance.checkLeafletLoaded) {
+          await mapManagerInstance.checkLeafletLoaded();
+        }
+        mapManagerInstance.initMap();
+      }, 100);
+    }
+
+    if (tabName === 'weather' && !this.initialized) {
+      this.initWeatherData();
+    }
+  }
+
+  initWeatherData() {
+    if (this.initialized) return;
+    this.initialized = true;
+
+    const forceRefresh = sessionStorage.getItem('forceDataRefreshAfterUpdate') === 'true';
+    if (forceRefresh) {
+      sessionStorage.removeItem('forceDataRefreshAfterUpdate');
+      this.fetchAllWeather(true);
+    } else {
+      this.fetchAllWeather();
+    }
+
+    this.refreshIntervalId = setInterval(() => this.fetchAllWeather(), this.refreshInterval);
+  }
+
+  attachWeatherButtonListener() {
+    const viewWeatherBtn = document.getElementById('view-weather-btn');
+    if (viewWeatherBtn) {
+      viewWeatherBtn.addEventListener('click', () => {
+        this.switchTab('weather');
+      });
+    }
+  }
+
+  renderCachedWeatherWidget() {
+    if (this.compactWidgetData) {
+      this.renderCompactWidget(this.compactWidgetData);
+    }
+  }
+
+  init() {
+    this.setupTabs();
+
+    const desktopWeatherBtn = document.getElementById('desktop-weather-btn');
+    if (desktopWeatherBtn) {
+      desktopWeatherBtn.addEventListener('click', () => {
+        this.switchTab('weather');
+      });
+    }
+
+    const backToAqiBtn = document.getElementById('back-to-aqi-btn');
+    if (backToAqiBtn) {
+      backToAqiBtn.addEventListener('click', () => {
+        this.switchTab('aqi');
+      });
+    }
+
+    this.attachWeatherButtonListener();
+
+    const isTehran = ProvinceManager.getCurrentProvince().id === 2;
+    if (isTehran) {
+      this.fetchCompactWidget();
+    }
+
+    document.addEventListener('provinceChanged', () => {
+      this.setupTabs();
+
+      const isTehran = ProvinceManager.getCurrentProvince().id === 2;
+      const footer = document.getElementById('weather-footer');
+
+      if (isTehran) {
+        this.fetchCompactWidget();
+      } else if (footer) {
+        footer.classList.add('hidden');
+      }
+    });
+  }
+}
+
+class MapManager {
+  constructor() {
+    this.map = null;
+    this.markers = [];
+    this.currentProvinceId = null;
+  }
+
+  initMap() {
+    if (this.map) return;
+
+    const mapContainer = document.getElementById('map-container');
+    if (!mapContainer) return;
+
+    if (typeof L === 'undefined') return;
+
+    try {
+      const province = ProvinceManager?.getCurrentProvince();
+      const center = province?.center || { latitude: 35.6679, longitude: 51.4321 };
+
+      this.map = L.map('map-container', {
+        preferCanvas: true,
+        attributionControl: true
+      }).setView([center.latitude, center.longitude], 11);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19,
+        subdomains: ['a', 'b', 'c']
+      }).addTo(this.map);
+
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      if (isDark) {
+        this.map.getContainer().style.filter = 'invert(90%) hue-rotate(180deg)';
+      }
+
+      document.addEventListener('themeChanged', () => {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (this.map) {
+          this.map.getContainer().style.filter = isDark ? 'invert(90%) hue-rotate(180deg)' : '';
+        }
+      });
+
+      this.currentProvinceId = province?.id;
+      this.updateStations();
+    } catch (error) {
+      console.error('Map initialization error:', error);
+    }
+  }
+
+  updateStations() {
+    if (!this.map || !stationsManagerInstance) return;
+
+    this.clearMarkers();
+
+    const stations = stationsManagerInstance.stations || [];
+    if (stations.length === 0) return;
+
+    const bounds = [];
+
+    stations.forEach(station => {
+      if (!station.latitude || !station.longitude || station.aqi === null || station.aqi === undefined) return;
+
+      const lat = parseFloat(station.latitude);
+      const lon = parseFloat(station.longitude);
+
+      if (isNaN(lat) || isNaN(lon)) return;
+
+      bounds.push([lat, lon]);
+
+      const category = Utils.getAQICategory(station.aqi);
+      const colors = {
+        good: '#22c55e',
+        fair: '#eab308',
+        poor: '#f97316',
+        veryPoor: '#ef4444',
+        hazardous: '#9333ea',
+        unknown: '#6b7280'
+      };
+
+      const markerColor = colors[category] || colors.unknown;
+
+      const icon = L.divIcon({
+        className: 'custom-aqi-marker',
+        html: `
+          <div style="
+            background: ${markerColor};
+            color: white;
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 14px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            white-space: nowrap;
+            font-family: Estedad, sans-serif;
+          ">
+            ${Utils.toPersian(Math.round(station.aqi))}
+          </div>
+        `,
+        iconSize: [50, 30],
+        iconAnchor: [25, 30]
+      });
+
+      const marker = L.marker([lat, lon], { icon }).addTo(this.map);
+
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      const textColor = isDark ? '#ffffff' : '#1f2937';
+      const bgColor = isDark ? '#1f2937' : '#ffffff';
+
+      const popupContent = `
+        <div style="font-family: Estedad, sans-serif; text-align: right; direction: rtl; background: ${bgColor}; color: ${textColor}; padding: 8px;">
+          <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: bold; color: ${textColor};">${Utils.toPersian(station.name)}</h3>
+          <p style="margin: 4px 0; color: ${textColor};"><strong>AQI:</strong> ${Utils.toPersian(Math.round(station.aqi))}</p>
+          <p style="margin: 4px 0; color: ${textColor};"><strong>وضعیت:</strong> ${Utils.getAQILabel(station.aqi)}</p>
+          ${station.pm25 ? `<p style="margin: 4px 0; color: ${textColor};"><strong>PM2.5:</strong> ${Utils.formatNumber(station.pm25)}</p>` : ''}
+          ${station.pm10 ? `<p style="margin: 4px 0; color: ${textColor};"><strong>PM10:</strong> ${Utils.formatNumber(station.pm10)}</p>` : ''}
+        </div>
+      `;
+
+      marker.bindPopup(popupContent);
+      this.markers.push(marker);
+    });
+
+    if (bounds.length > 0) {
+      this.map.fitBounds(bounds, { padding: [50, 50] });
+    }
+  }
+
+  clearMarkers() {
+    this.markers.forEach(marker => marker.remove());
+    this.markers = [];
+  }
+
+  checkLeafletLoaded() {
+    return new Promise((resolve) => {
+      if (typeof L !== 'undefined') {
+        resolve();
+        return;
+      }
+
+      let attempts = 0;
+      const maxAttempts = 50;
+      const checkInterval = setInterval(() => {
+        attempts++;
+        if (typeof L !== 'undefined') {
+          clearInterval(checkInterval);
+          resolve();
+        } else if (attempts >= maxAttempts) {
+          clearInterval(checkInterval);
+          resolve();
+        }
+      }, 100);
+    });
+  }
+
+  init() {
+    const desktopMapBtn = document.getElementById('desktop-map-btn');
+    if (desktopMapBtn) {
+      desktopMapBtn.addEventListener('click', async () => {
+        await this.checkLeafletLoaded();
+        if (typeof weatherManagerInstance !== 'undefined' && weatherManagerInstance) {
+          weatherManagerInstance.switchTab('map');
+        }
+      });
+    }
+
+    const backToAqiFromMapBtn = document.getElementById('back-to-aqi-from-map-btn');
+    if (backToAqiFromMapBtn) {
+      backToAqiFromMapBtn.addEventListener('click', () => {
+        if (typeof weatherManagerInstance !== 'undefined' && weatherManagerInstance) {
+          weatherManagerInstance.switchTab('aqi');
+        }
+      });
+    }
+
+    document.addEventListener('provinceChanged', () => {
+      const province = ProvinceManager?.getCurrentProvince();
+      if (province && province.id !== this.currentProvinceId) {
+        this.currentProvinceId = province.id;
+
+        if (this.map && province.center) {
+          this.map.setView([province.center.latitude, province.center.longitude], 11);
+        }
+
+        this.updateStations();
+      }
+    });
+
+    if (stationsManagerInstance) {
+      const originalRenderStations = stationsManagerInstance.renderStations.bind(stationsManagerInstance);
+      stationsManagerInstance.renderStations = function() {
+        originalRenderStations();
+        if (mapManagerInstance && mapManagerInstance.map) {
+          mapManagerInstance.updateStations();
+        }
+      };
+    }
+  }
+}
+
+let stationsManagerInstance = null;
+let weatherManagerInstance = null;
+let mapManagerInstance = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  stationsManagerInstance = new StationsManager();
+  stationsManagerInstance.init();
+
+  weatherManagerInstance = new WeatherManager();
+  weatherManagerInstance.init();
+
+  mapManagerInstance = new MapManager();
+  mapManagerInstance.init();
+});
