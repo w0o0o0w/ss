@@ -1,0 +1,2255 @@
+// Province configuration imported from config.js
+const PROVINCES = AppConfig.PROVINCES;
+const MAX_DISTANCE_FROM_PROVINCE = AppConfig.MAX_DISTANCE_FROM_PROVINCE;
+
+const ModalUtils = {
+  setThemeColor(isOpen = true) {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) return;
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    meta.setAttribute('content', isOpen ? (isDark ? '#1d4ed8' : '#2563eb') : (isDark ? '#1d2634' : '#ffffff'));
+  },
+
+  open(modalId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return false;
+    modal.classList.remove('hidden');
+    this.setThemeColor(true);
+    return true;
+  },
+
+  close(modalId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return false;
+    modal.classList.add('hidden');
+    this.setThemeColor(false);
+    return true;
+  },
+
+  setupCloseOnOutsideClick(modalId, callback) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal && callback) {
+        callback();
+      }
+    });
+  }
+};
+
+const MobileMenuUtils = {
+  close() {
+    const mobileMenu = document.getElementById('mobile-menu');
+    const mobileMenuOverlay = document.getElementById('mobile-menu-overlay');
+    if (mobileMenu && mobileMenuOverlay) {
+      mobileMenu.classList.add('-translate-x-full');
+      mobileMenuOverlay.classList.add('hidden');
+      document.body.style.overflow = '';
+    }
+  },
+
+  open() {
+    const mobileMenu = document.getElementById('mobile-menu');
+    const mobileMenuOverlay = document.getElementById('mobile-menu-overlay');
+    if (mobileMenu && mobileMenuOverlay) {
+      mobileMenu.classList.remove('-translate-x-full');
+      mobileMenuOverlay.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+    }
+  }
+};
+
+const Utils = {
+  persianDigits: ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'],
+  persianToEnglishMap: null,
+
+  _getPersianMap() {
+    if (!this.persianToEnglishMap) {
+      this.persianToEnglishMap = {};
+      this.persianDigits.forEach((persian, index) => {
+        this.persianToEnglishMap[persian] = index;
+      });
+    }
+    return this.persianToEnglishMap;
+  },
+
+  toPersian(num) {
+    if (num === null || num === undefined) return '';
+    return String(num).replace(/\d/g, digit => this.persianDigits[digit]);
+  },
+
+  toEnglish(str) {
+    if (!str) return '';
+    const map = this._getPersianMap();
+    return String(str).replace(/[۰-۹]/g, persian => map[persian] || persian);
+  },
+
+  aqiColorDefs: {
+    good:      [['#22c55e', '#16a34a', '#86efac'], ['#16a34a', '#15803d', '#22c55e']],
+    fair:      [['#eab308', '#ca8a04', '#fde047'], ['#ca8a04', '#a16207', '#eab308']],
+    poor:      [['#f97316', '#ea580c', '#fdba74'], ['#ea580c', '#c2410c', '#f97316']],
+    veryPoor:  [['#ef4444', '#dc2626', '#fca5a5'], ['#dc2626', '#b91c1c', '#ef4444']],
+    hazardous: [['#9333ea', '#7e22ce', '#d8b4fe'], ['#7e22ce', '#6b21a8', '#a855f7']],
+    unknown:   [['#6b7280', '#4b5563', '#9ca3af'], ['#4b5563', '#374151', '#6b7280']]
+  },
+
+aqiLabels: {
+  good: 'خوب',
+  fair: 'متوسط',
+  poor: 'ناسالم برای برخی',
+  veryPoor: 'ناسالم',
+  hazardous: 'بسیار خطرناک',
+  unknown: 'نامشخص'
+},
+
+aqiStatus: {
+  good: 'کیفیت هوا سالم است',
+  fair: 'ممکن است برخی افراد حساس دچار مشکل شوند',
+  poor: 'برای گروه‌های حساس مضر است',
+  veryPoor: 'برای عموم مردم ناسالم است',
+  hazardous: 'شرایط هوا بسیار خطرناک است',
+  unknown: 'اطلاعات کیفیت هوا در دسترس نیست'
+},
+
+  aqiCSSClasses: {
+    good: 'bg-aqi-good',
+    fair: 'bg-aqi-fair',
+    poor: 'bg-aqi-poor',
+    veryPoor: 'bg-aqi-very_poor',
+    hazardous: 'bg-aqi-hazardous',
+    unknown: 'bg-gray-400'
+  },
+
+  getAQICategory(aqi) {
+    if (!aqi) return 'unknown';
+    if (aqi <= 50) return 'good';
+    if (aqi <= 100) return 'fair';
+    if (aqi <= 150) return 'poor';
+    if (aqi <= 200) return 'veryPoor';
+    return 'hazardous';
+  },
+
+  getAQILabel(aqi) {
+    const category = this.getAQICategory(aqi);
+    return this.aqiLabels[category];
+  },
+
+  getAQIStatus(aqi) {
+    const category = this.getAQICategory(aqi);
+    return this.aqiStatus[category];
+  },
+
+  getAQIColorClasses(aqi) {
+    const category = this.getAQICategory(aqi);
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const [c1, c2, border] = this.aqiColorDefs[category][isDark ? 1 : 0];
+    return {
+      gradient: `linear-gradient(to bottom right, ${c1}, ${c2})`,
+      border
+    };
+  },
+
+  getAQIClass(aqi) {
+    const category = this.getAQICategory(aqi);
+    return this.aqiCSSClasses[category];
+  },
+
+  formatNumber(num) {
+    if (!num && num !== 0) return '—';
+    return this.toPersian(parseFloat(num).toFixed(1));
+  },
+
+  calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  },
+
+  isValidStation(station) {
+    if (!station || !station.latitude || !station.longitude) return false;
+    const stationName = station.name || station.stationName_Fa || station.stationName || null;
+    return !!stationName;
+  },
+
+  hasAqiData(station) {
+    return station && station.aqi !== null && station.aqi !== undefined;
+  },
+
+  findClosestStationWithValidation(stations, userLocation, options = {}) {
+    const { requireAqi = false, prioritizeAqi = true } = options;
+
+    if (!userLocation || !stations || stations.length === 0) {
+      return null;
+    }
+
+    let closestWithAqi = null;
+    let minDistanceWithAqi = Infinity;
+    let closestWithoutAqi = null;
+    let minDistanceWithoutAqi = Infinity;
+
+    stations.forEach(station => {
+      if (!this.isValidStation(station)) return;
+
+      const distance = this.calculateDistance(
+        userLocation.latitude,
+        userLocation.longitude,
+        parseFloat(station.latitude),
+        parseFloat(station.longitude)
+      );
+
+      const hasAqi = this.hasAqiData(station);
+
+      if (hasAqi) {
+        if (distance < minDistanceWithAqi) {
+          minDistanceWithAqi = distance;
+          closestWithAqi = { ...station, distance };
+        }
+      } else {
+        if (distance < minDistanceWithoutAqi) {
+          minDistanceWithoutAqi = distance;
+          closestWithoutAqi = { ...station, distance };
+        }
+      }
+    });
+
+    if (requireAqi) {
+      return closestWithAqi;
+    }
+
+    if (prioritizeAqi && closestWithAqi) {
+      return closestWithAqi;
+    }
+
+    return closestWithAqi || closestWithoutAqi;
+  }
+};
+
+const DarkMode = {
+  storageKey: 'theme-preference',
+  html: document.documentElement,
+  preferenceOrder: ['auto', 'light', 'dark'],
+
+  getPreference() {
+    try {
+      return localStorage.getItem(this.storageKey) || 'auto';
+    } catch (e) {
+      return 'auto';
+    }
+  },
+
+  savePreference(preference) {
+    try {
+      localStorage.setItem(this.storageKey, preference);
+    } catch (e) {
+      console.warn('localStorage not available');
+    }
+  },
+
+  getSystemPreference() {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  },
+
+  resolveTheme(preference) {
+    if (preference === 'auto') {
+      return this.getSystemPreference();
+    }
+    return preference;
+  },
+
+  init() {
+    const preference = this.getPreference();
+    this.applyTheme(preference);
+
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      const currentPref = this.getPreference();
+      if (currentPref === 'auto') {
+        this.applyTheme('auto');
+      }
+    });
+  },
+
+  applyTheme(preference) {
+    if (!this.preferenceOrder.includes(preference)) {
+      preference = 'auto';
+    }
+
+    const effectiveTheme = this.resolveTheme(preference);
+    this.html.setAttribute('data-theme', effectiveTheme);
+    this.savePreference(preference);
+    this.updateToggle(preference);
+    this.updateThemeColor(effectiveTheme);
+    document.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme: effectiveTheme } }));
+  },
+
+  updateThemeColor(theme) {
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    const appleStatusBarMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+    
+    if (themeColorMeta) {
+      themeColorMeta.setAttribute('content', theme === 'dark' ? '#1d2634' : '#ffffff');
+    }
+    
+    if (appleStatusBarMeta) {
+      appleStatusBarMeta.setAttribute('content', 'default');
+    }
+  },
+
+  /**
+   * Get current preference (not effective theme)
+   */
+  getCurrentPreference() {
+    return this.getPreference();
+  },
+
+  /**
+   * Get current effective theme
+   */
+  getCurrentTheme() {
+    return this.html.getAttribute('data-theme') || 'light';
+  },
+
+  /**
+   * Toggle between auto, light, and dark modes (cycles through)
+   */
+  toggle() {
+    const current = this.getCurrentPreference();
+    const currentIndex = this.preferenceOrder.indexOf(current);
+    const nextIndex = (currentIndex + 1) % this.preferenceOrder.length;
+    const next = this.preferenceOrder[nextIndex];
+    this.applyTheme(next);
+
+    // Track theme change in GA4
+    window.trackEvent?.('theme_changed', {
+      from_theme: current,
+      to_theme: next,
+      effective_theme: this.resolveTheme(next)
+    });
+  },
+
+  /**
+   * Update toggle button state with appropriate icon and label
+   */
+  updateToggle(preference) {
+    const toggle = document.getElementById('theme-toggle');
+    if (!toggle) return;
+
+    const icons = {
+      'auto': { icon: '<i class="fas fa-palette"></i>', label: 'Theme: Auto (System)' },
+      'light': { icon: '<i class="fas fa-sun"></i>', label: 'Theme: Light' },
+      'dark': { icon: '<i class="fas fa-moon"></i>', label: 'Theme: Dark' }
+    };
+
+    const config = icons[preference] || icons['auto'];
+    toggle.innerHTML = config.icon;
+    toggle.setAttribute('aria-label', config.label);
+    toggle.setAttribute('title', config.label);
+  }
+};
+
+const ProvinceManager = {
+  storageKey: 'selected-province',
+  currentProvince: null,
+  userHasSelected: false,
+
+  init() {
+    const saved = this.getSelectedProvince();
+    if (saved) {
+      this.userHasSelected = true;
+      this.currentProvince = PROVINCES[saved] || PROVINCES[2];
+    } else {
+      this.currentProvince = PROVINCES[2];
+    }
+    this.updateHeaderName();
+  },
+
+  getSelectedProvince() {
+    try {
+      const saved = localStorage.getItem(this.storageKey);
+      return saved ? parseInt(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  getCurrentProvinceId() {
+    return this.getCurrentProvince().id;
+  },
+
+  setProvince(provinceId, isManualSelection = true) {
+    if (!PROVINCES[provinceId]) return;
+
+    this.currentProvince = PROVINCES[provinceId];
+    this.userHasSelected = true;
+    try {
+      localStorage.setItem(this.storageKey, provinceId);
+    } catch (e) {
+      console.warn('Failed to save province');
+    }
+    this.updateHeaderName();
+
+    // Only track province_selected for manual selections
+    // Auto-detection is tracked separately via auto_detect_location event
+    if (isManualSelection) {
+      window.trackEvent?.('province_selected', {
+        province_id: provinceId,
+        province_name: this.currentProvince.name,
+        selection_method: 'manual'
+      });
+    }
+
+    document.dispatchEvent(new CustomEvent('provinceChanged', {
+      detail: { province: this.currentProvince }
+    }));
+  },
+
+  getCurrentProvince() {
+    return this.currentProvince || PROVINCES[2];
+  },
+
+  setCityAvgAqi(provinceId, aqi) {
+    if (!this.cityAvgAqiMap) {
+      this.cityAvgAqiMap = {};
+    }
+    this.cityAvgAqiMap[provinceId] = aqi;
+    this.updateHeaderAqi();
+  },
+
+  getCityAvgAqi(provinceId) {
+    return this.cityAvgAqiMap?.[provinceId] || null;
+  },
+
+  getCurrentCityAvgAqi() {
+    const currentId = this.getCurrentProvinceId();
+    return this.getCityAvgAqi(currentId);
+  },
+
+  async loadAllProvincesSummary() {
+    try {
+      const response = await fetch(`/api.php?action=provinces-summary&csrf_token=${window.CSRF_TOKEN}`);
+
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json();
+
+      if (data.status === 'success' && Array.isArray(data.data)) {
+        if (!this.cityAvgAqiMap) {
+          this.cityAvgAqiMap = {};
+        }
+
+        data.data.forEach(province => {
+          if (province.city_avg_aqi !== null) {
+            this.cityAvgAqiMap[province.id] = province.city_avg_aqi;
+          }
+        });
+
+        this.updateHeaderAqi();
+      }
+    } catch (error) {
+      // Silent fail - not critical
+    }
+  },
+
+  getClosestProvince(lat, lng) {
+    let closestProvince = PROVINCES[2];
+    let minDistance = Infinity;
+
+    Object.values(PROVINCES).forEach(province => {
+      const distance = Utils.calculateDistance(
+        lat, lng,
+        province.center.latitude,
+        province.center.longitude
+      );
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestProvince = province;
+      }
+    });
+
+    return minDistance <= MAX_DISTANCE_FROM_PROVINCE ? closestProvince : PROVINCES[2];
+  },
+
+  openModal() {
+    this.renderProvinceList();
+    ModalUtils.open('province-modal');
+  },
+
+  closeModal() {
+    ModalUtils.close('province-modal');
+  },
+
+  renderProvinceList() {
+    const list = document.getElementById('province-list');
+    if (!list) return;
+
+    list.innerHTML = '';
+    const currentId = this.getCurrentProvince().id;
+
+    Object.values(PROVINCES).forEach(province => {
+      const isSelected = province.id === currentId;
+      const item = document.createElement('div');
+      item.className = isSelected
+        ? 'p-4 bg-blue-50 dark:bg-blue-900/30 border-b dark:border-gray-700'
+        : 'p-4 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors border-b dark:border-gray-700';
+      item.dataset.provinceId = province.id;
+
+      const aqi = ProvinceManager.getCityAvgAqi(province.id);
+      const aqiBadge = aqi !== null ? (() => {
+        const aqiClass = Utils.getAQIClass(aqi);
+        return `<span class="px-2 py-1 rounded text-sm font-bold text-white ${aqiClass}">${Utils.toPersian(Math.round(aqi))}</span>`;
+      })() : '';
+
+      item.innerHTML = `
+        <div class="flex items-center justify-between gap-4">
+          <div class="flex-1">
+            <p class="text-base font-semibold text-gray-900 dark:text-white">${province.name}</p>
+          </div>
+          <div class="flex items-center gap-3">
+            ${aqiBadge}
+            ${isSelected ? '<i class="fas fa-check text-blue-600 text-2xl"></i>' : ''}
+          </div>
+        </div>
+      `;
+
+      list.appendChild(item);
+    });
+
+    list.addEventListener('click', (e) => {
+      const item = e.target.closest('[data-province-id]');
+      if (item && item.dataset.provinceId) {
+        const provinceId = parseInt(item.dataset.provinceId);
+        if (provinceId !== currentId) {
+          this.setProvince(provinceId);
+          this.closeModal();
+        }
+      }
+    });
+  },
+
+  updateHeaderName() {
+    const headerName = document.getElementById('header-province-name');
+    if (headerName) {
+      headerName.textContent = this.getCurrentProvince().name;
+    }
+    this.updateHeaderAqi();
+  },
+
+  updateHeaderAqi() {
+    const headerAqi = document.getElementById('header-province-aqi');
+    if (!headerAqi) return;
+
+    const aqi = this.getCurrentCityAvgAqi();
+    if (aqi === null) {
+      headerAqi.classList.add('hidden');
+      return;
+    }
+
+    const aqiClass = Utils.getAQIClass(aqi);
+
+    headerAqi.textContent = Utils.toPersian(Math.round(aqi));
+    headerAqi.className = `px-2 py-0.5 rounded text-xs font-bold text-white ${aqiClass}`;
+    headerAqi.classList.remove('hidden');
+  }
+};
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js');
+  });
+}
+
+window.deferredPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  window.deferredPrompt = e;
+  const installBtn = document.getElementById('install-btn');
+  const mobileInstallBtn = document.getElementById('mobile-install-btn');
+  if (installBtn) installBtn.style.display = 'block';
+  if (mobileInstallBtn) mobileInstallBtn.style.display = 'block';
+});
+
+window.addEventListener('appinstalled', () => {
+  window.deferredPrompt = null;
+  const installBtn = document.getElementById('install-btn');
+  const mobileInstallBtn = document.getElementById('mobile-install-btn');
+  if (installBtn) installBtn.style.display = 'none';
+  if (mobileInstallBtn) mobileInstallBtn.style.display = 'none';
+});
+
+const LocationSelector = {
+  init() {
+    this.setupEventListeners();
+    this.setupProvinceDropdown();
+    this.setupStationDropdown();
+  },
+
+  setupEventListeners() {
+    const modal = document.getElementById('location-modal');
+    const closeBtn = document.getElementById('close-location-modal');
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => this.closeModal());
+    }
+
+    if (modal) {
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          this.closeModal();
+        }
+      });
+    }
+  },
+
+  async openModal() {
+    this.renderProvinceDropdown();
+    ModalUtils.open('location-modal');
+    AutoDetectUI.updateStateOnOpen();
+
+    if (StationSelector.allStations && StationSelector.allStations.length > 0) {
+      this.renderStationDropdown(StationSelector.allStations);
+      return;
+    }
+
+    this.showStationLoading(true);
+
+    if (!stationsManagerInstance) {
+      this.showError('خطا در بارگذاری سیستم. لطفا صفحه را رفرش کنید.');
+      return;
+    }
+
+    try {
+      await stationsManagerInstance.fetchStations(false, false);
+
+      const modal = document.getElementById('location-modal');
+      if (modal && !modal.classList.contains('hidden')) {
+        if (StationSelector.allStations && StationSelector.allStations.length > 0) {
+          this.renderStationDropdown(StationSelector.allStations);
+        } else {
+          this.showError('هیچ ایستگاهی برای این استان یافت نشد.');
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching stations:', error);
+      const modal = document.getElementById('location-modal');
+      if (modal && !modal.classList.contains('hidden')) {
+        this.showError('خطا در دریافت ایستگاه‌ها. لطفا دوباره تلاش کنید.');
+      }
+    }
+  },
+
+  closeModal() {
+    ModalUtils.close('location-modal');
+  },
+
+  showStationLoading(show) {
+    const loadingEl = document.getElementById('station-dropdown-loading');
+    const triggerEl = document.getElementById('station-dropdown-trigger');
+    if (loadingEl) {
+      loadingEl.classList.toggle('hidden', !show);
+    }
+    if (triggerEl) {
+      triggerEl.classList.toggle('hidden', show);
+    }
+    if (show) {
+      const listEl = document.getElementById('station-list');
+      if (listEl) listEl.innerHTML = '';
+      this.closeStationDropdown();
+    }
+  },
+
+  showError(message) {
+    const listEl = document.getElementById('station-list');
+    if (!listEl) return;
+
+    this.showStationLoading(false);
+    listEl.innerHTML = `
+      <div class="p-8 text-center">
+        <div class="text-red-500 dark:text-red-400 mb-2">
+          <i class="fas fa-exclamation-triangle text-3xl"></i>
+        </div>
+        <p class="text-gray-700 dark:text-gray-300 text-sm">${message}</p>
+      </div>
+    `;
+  },
+
+  renderProvinceDropdown() {
+    const list = document.getElementById('province-list');
+    const selectedName = document.getElementById('selected-province-name');
+    const searchInput = document.getElementById('province-search');
+
+    if (!list) return;
+
+    const currentId = ProvinceManager.getCurrentProvince().id;
+    const provinces = Object.values(PROVINCES).sort((a, b) =>
+      a.name.localeCompare(b.name, 'fa')
+    );
+
+    // Update selected province name
+    const current = PROVINCES[currentId];
+    if (selectedName && current) {
+      selectedName.textContent = current.name;
+    }
+
+    // Render province list
+    const renderList = (filterQuery = '') => {
+      list.innerHTML = '';
+      const query = filterQuery.toLowerCase();
+
+      const filtered = provinces.filter(p =>
+        p.name.includes(query)
+      );
+
+      if (filtered.length === 0) {
+        list.innerHTML = '<div class="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">هیچ استانی یافت نشد</div>';
+        return;
+      }
+
+      filtered.forEach(province => {
+        const isSelected = province.id === currentId;
+        const item = document.createElement('button');
+        item.className = isSelected
+          ? 'w-full flex items-center justify-between px-4 py-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors font-medium text-sm border-r-2 border-blue-600 dark:border-blue-400'
+          : 'w-full flex items-center justify-between px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors text-sm';
+
+        const aqi = ProvinceManager.getCityAvgAqi(province.id);
+        const aqiBadge = aqi !== null ? (() => {
+          const aqiClass = Utils.getAQIClass(aqi);
+          return `<span class="px-2 py-0.5 rounded text-xs font-bold text-white ${aqiClass}">${Utils.toPersian(Math.round(aqi))}</span>`;
+        })() : '';
+
+        item.innerHTML = `
+          <span>
+            ${isSelected ? '<i class="fas fa-check text-blue-600 dark:text-blue-400 ml-2"></i>' : ''}
+            ${province.name}
+          </span>
+          ${aqiBadge}
+        `;
+
+        item.addEventListener('click', () => {
+          if (province.id !== currentId) {
+            this.closeProvinceDropdown();
+            this.showStationLoading(true);
+            ProvinceManager.setProvince(province.id);
+          }
+        });
+
+        list.appendChild(item);
+      });
+    };
+
+    // Initial render
+    renderList();
+
+    // Search functionality
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        renderList(e.target.value);
+      });
+    }
+  },
+
+  setupProvinceDropdown() {
+    const trigger = document.getElementById('province-dropdown-trigger');
+    const menu = document.getElementById('province-dropdown-menu');
+    const icon = document.getElementById('province-dropdown-icon');
+    const searchInput = document.getElementById('province-search');
+
+    if (!trigger || !menu) return;
+
+    // Toggle dropdown
+    trigger.addEventListener('click', () => {
+      const isOpen = !menu.classList.contains('hidden');
+      if (isOpen) {
+        this.closeProvinceDropdown();
+      } else {
+        this.openProvinceDropdown();
+      }
+    });
+
+    // Close on outside click
+    document.addEventListener('click', (e) => {
+      if (!trigger.contains(e.target) && !menu.contains(e.target)) {
+        this.closeProvinceDropdown();
+      }
+    });
+
+    // Close on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !menu.classList.contains('hidden')) {
+        this.closeProvinceDropdown();
+      }
+    });
+  },
+
+  openProvinceDropdown() {
+    const menu = document.getElementById('province-dropdown-menu');
+    const icon = document.getElementById('province-dropdown-icon');
+    const searchInput = document.getElementById('province-search');
+
+    if (menu) {
+      menu.classList.remove('hidden');
+    }
+    if (icon) {
+      icon.style.transform = 'rotate(180deg)';
+    }
+    if (searchInput) {
+      searchInput.value = '';
+      setTimeout(() => searchInput.focus(), 100);
+    }
+    this.renderProvinceDropdown();
+  },
+
+  closeProvinceDropdown() {
+    const menu = document.getElementById('province-dropdown-menu');
+    const icon = document.getElementById('province-dropdown-icon');
+    const searchInput = document.getElementById('province-search');
+
+    if (menu) {
+      menu.classList.add('hidden');
+    }
+    if (icon) {
+      icon.style.transform = 'rotate(0deg)';
+    }
+    if (searchInput) {
+      searchInput.value = '';
+    }
+  },
+
+  renderStationDropdown(stations = null, searchQuery = '') {
+    const list = document.getElementById('station-list');
+    const selectedName = document.getElementById('selected-station-name');
+    const searchInput = document.getElementById('station-search');
+
+    if (!list) return;
+
+    this.showStationLoading(false);
+
+    const stationsToRender = stations || StationSelector.allStations;
+    const currentId = StationSelector.selectedStationId;
+
+    const selectedStation = currentId ? stationsToRender.find(s => parseInt(s.id) === currentId) : null;
+
+    if (selectedName) {
+      if (selectedStation) {
+        selectedName.textContent = Utils.toPersian(selectedStation.name);
+      } else {
+        selectedName.textContent = 'تشخیص خودکار';
+      }
+    }
+
+    const renderList = (filterQuery = '') => {
+      list.innerHTML = '';
+      const query = filterQuery.toLowerCase().trim();
+
+      if (!filterQuery) {
+        const isSelected = !currentId;
+        const autoItem = document.createElement('button');
+        autoItem.className = isSelected
+          ? 'w-full text-right px-4 py-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-medium border-b border-gray-200 dark:border-gray-700 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors'
+          : 'w-full text-right px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 border-b border-gray-200 dark:border-gray-700 transition-colors';
+
+        autoItem.innerHTML = `
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              ${isSelected ? '<i class="fas fa-check text-blue-600 dark:text-blue-400 ml-2"></i>' : ''}
+              <span class="text-gray-900 dark:text-gray-100">تشخیص خودکار</span>
+            </div>
+            <span class="text-xs text-gray-500 dark:text-gray-400">نزدیک‌ترین ایستگاه</span>
+          </div>
+        `;
+
+        autoItem.addEventListener('click', () => {
+          StationSelector.clearSelection();
+          this.closeStationDropdown();
+          this.closeModal();
+        });
+
+        list.appendChild(autoItem);
+      }
+
+      const filtered = stationsToRender.filter(s => {
+        if (!query) return true;
+        return s.name && s.name.toLowerCase().includes(query);
+      });
+
+      const sorted = [...filtered].sort((a, b) => (b.aqi || 0) - (a.aqi || 0));
+
+      if (sorted.length === 0 && filterQuery) {
+        list.innerHTML = '<div class="p-8 text-center text-gray-500 dark:text-gray-400"><i class="fas fa-search text-3xl mb-2 opacity-50"></i><p class="text-sm">ایستگاهی پیدا نشد</p></div>';
+        return;
+      }
+
+      sorted.forEach(station => {
+        if (station.aqi === null || station.aqi === undefined) return;
+
+        const isSelected = currentId === parseInt(station.id);
+        const aqiClass = Utils.getAQIClass(station.aqi);
+
+        const item = document.createElement('button');
+        item.className = isSelected
+          ? 'w-full text-right px-4 py-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-medium border-b border-gray-200 dark:border-gray-700 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors'
+          : 'w-full text-right px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 border-b border-gray-200 dark:border-gray-700 transition-colors';
+
+        const stationName = Utils.toPersian(station.name);
+        const aqiValue = Utils.toPersian(Math.round(station.aqi || 0));
+
+        item.innerHTML = `
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              ${isSelected ? '<i class="fas fa-check text-blue-600 dark:text-blue-400 ml-2"></i>' : ''}
+              <span class="text-gray-900 dark:text-gray-100">${stationName}</span>
+            </div>
+            <span class="inline-block px-2 py-0.5 rounded text-xs font-bold text-white ${aqiClass}">${aqiValue}</span>
+          </div>
+        `;
+
+        item.addEventListener('click', () => {
+          StationSelector.selectStation(station);
+          this.closeStationDropdown();
+          this.closeModal();
+        });
+
+        list.appendChild(item);
+      });
+    };
+
+    renderList(searchQuery);
+
+    if (searchInput) {
+      searchInput.value = searchQuery;
+      const newListener = (e) => {
+        renderList(e.target.value);
+      };
+      searchInput.removeEventListener('input', searchInput._dropdownListener);
+      searchInput._dropdownListener = newListener;
+      searchInput.addEventListener('input', newListener);
+    }
+  },
+
+  setupStationDropdown() {
+    const trigger = document.getElementById('station-dropdown-trigger');
+    const menu = document.getElementById('station-dropdown-menu');
+    const searchInput = document.getElementById('station-search');
+
+    if (!trigger || !menu) return;
+
+    trigger.addEventListener('click', () => {
+      const isOpen = !menu.classList.contains('hidden');
+      if (isOpen) {
+        this.closeStationDropdown();
+      } else {
+        this.openStationDropdown();
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!trigger.contains(e.target) && !menu.contains(e.target)) {
+        this.closeStationDropdown();
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !menu.classList.contains('hidden')) {
+        this.closeStationDropdown();
+      }
+    });
+  },
+
+  openStationDropdown() {
+    const menu = document.getElementById('station-dropdown-menu');
+    const icon = document.getElementById('station-dropdown-icon');
+    const searchInput = document.getElementById('station-search');
+
+    if (menu) {
+      menu.classList.remove('hidden');
+      this.renderStationDropdown();
+    }
+    if (icon) {
+      icon.classList.add('rotate-180');
+    }
+    if (searchInput) {
+      setTimeout(() => searchInput.focus(), 100);
+    }
+  },
+
+  closeStationDropdown() {
+    const menu = document.getElementById('station-dropdown-menu');
+    const icon = document.getElementById('station-dropdown-icon');
+    const searchInput = document.getElementById('station-search');
+
+    if (menu) {
+      menu.classList.add('hidden');
+    }
+    if (icon) {
+      icon.classList.remove('rotate-180');
+    }
+    if (searchInput) {
+      searchInput.value = '';
+    }
+  }
+};
+
+const StationSelector = {
+  selectedStationId: null,
+  allStations: [],
+  storageKeyPrefix: 'selected-station-',
+
+  getStorageKey() {
+    const provinceId = ProvinceManager.getCurrentProvinceId();
+    return this.storageKeyPrefix + provinceId;
+  },
+
+  init() {
+    this.loadSavedStation();
+    this.setupEventListeners();
+  },
+
+  loadSavedStation() {
+    const saved = localStorage.getItem(this.getStorageKey());
+    this.selectedStationId = saved ? parseInt(saved) : null;
+  },
+
+  saveStation(stationId) {
+    this.selectedStationId = parseInt(stationId);
+    localStorage.setItem(this.getStorageKey(), stationId);
+  },
+
+  clearSelection() {
+    this.selectedStationId = null;
+    localStorage.removeItem(this.getStorageKey());
+
+    if (LocationManager.locationStatus === 'too_far') {
+      LocationManager.showLocationMessage('tooFar');
+    } else {
+      const closestStation = LocationManager.findClosestStation(this.allStations);
+      if (closestStation) {
+        LocationManager.displayClosestStation(closestStation, false);
+      }
+    }
+  },
+
+  setupEventListeners() {
+    const initialBtn = document.getElementById('change-station-btn');
+    if (initialBtn) {
+      initialBtn.onclick = () => {
+        LocationSelector.openModal();
+      };
+    }
+  },
+
+  attachChangeStationButtonListener() {
+    const btn = document.getElementById('change-station-btn');
+    if (btn) {
+      btn.onclick = () => {
+        LocationSelector.openModal();
+      };
+    }
+  },
+
+  selectStation(station) {
+    this.saveStation(station.id);
+    LocationManager.displayClosestStation(station, true);
+    this.attachChangeStationButtonListener();
+
+    // Track station selection in GA4
+    window.trackEvent?.('station_selected', {
+      station_id: station.id,
+      station_name: station.name,
+      selection_method: 'manual',
+      province_id: ProvinceManager.getCurrentProvince().id
+    });
+
+    document.dispatchEvent(new CustomEvent('stationChanged', { detail: station }));
+  },
+
+};
+
+const LocationManager = {
+  userLocation: null,
+  locationStatus: 'idle',
+  locationInitialized: false,
+
+  getThemeClasses() {
+    return {
+      requesting: {
+        bg: 'bg-blue-50 dark:bg-gray-800 border-blue-300 dark:border-blue-400',
+        text: 'text-gray-900 dark:text-gray-100',
+        subtext: 'text-gray-600 dark:text-gray-300'
+      },
+      denied: {
+        bg: 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600',
+        text: 'text-gray-900 dark:text-gray-100',
+        label: 'text-gray-700 dark:text-gray-300',
+        subtext: 'text-gray-600 dark:text-gray-400'
+      },
+      tooFar: {
+        bg: 'bg-orange-50 dark:bg-gray-800 border-orange-300 dark:border-orange-500',
+        text: 'text-gray-900 dark:text-gray-100',
+        subtext: 'text-gray-600 dark:text-gray-300'
+      }
+    };
+  },
+
+  showLocationMessage(type = 'requesting') {
+    const card = document.getElementById('closest-station-card');
+    if (!card) return;
+
+    const theme = this.getThemeClasses();
+    const colors = theme[type] || theme.requesting;
+
+    const messages = {
+      requesting: {
+        icon: '<i class="fas fa-map-pin"></i>',
+        title: 'در حال یافتن موقعیت شما...',
+        subtitle: 'لطفا دسترسی به موقعیت را تایید کنید',
+        spinner: true,
+        showButton: false
+      },
+      denied: {
+        icon: '<i class="fas fa-map-pin"></i>',
+        title: 'دسترسی به موقعیت غیرفعال است',
+        subtitle: 'می‌توانید از دکمه "تغییر ایستگاه" برای انتخاب دستی استفاده کنید',
+        spinner: false,
+        showButton: true
+      },
+      timeout: {
+        icon: '<i class="fas fa-exclamation-triangle"></i>',
+        title: 'نتوانستیم موقعیت شما را پیدا کنیم',
+        subtitle: 'لطفا استان و ایستگاه خود را به صورت دستی انتخاب کنید',
+        spinner: false,
+        showButton: true
+      },
+      tooFar: {
+        icon: '<i class="fas fa-map-marker-alt"></i>',
+        title: 'شما خارج از تهران هستید',
+        subtitle: 'این برنامه برای نمایش کیفیت هوای تهران طراحی شده است',
+        spinner: false,
+        showButton: true
+      },
+      outsideProvince: {
+        icon: '<i class="fas fa-map-marker-alt"></i>',
+        title: 'شما خارج از این استان هستید',
+        subtitle: 'لطفا از لیست زیر ایستگاهی را انتخاب کنید',
+        spinner: false,
+        showButton: true,
+        buttonText: '<i class="fas fa-list"></i> انتخاب ایستگاه'
+      }
+    };
+
+    const msg = messages[type] || messages.requesting;
+    const spinnerClass = msg.spinner ? 'animate-spin' : '';
+
+    const buttonText = msg.buttonText || '<i class="fas fa-redo"></i> تغییر ایستگاه';
+    const buttonId = type === 'outsideProvince' ? 'open-station-selector-btn' : 'change-station-btn-location-denied';
+    const buttonHtml = msg.showButton ? `
+      <div class="mt-4 flex justify-center">
+        <button id="${buttonId}" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 rounded-lg transition-colors text-sm font-semibold text-white">
+          ${buttonText}
+        </button>
+      </div>
+    ` : '';
+
+    card.innerHTML = `
+      <div class="rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-lg sm:shadow-2xl border-t-4 ${colors.bg}">
+        <div class="flex items-center justify-center gap-3 mb-2">
+          <div class="${spinnerClass} ${colors.text}">${msg.icon}</div>
+          <p class="text-base sm:text-lg font-semibold ${colors.text}">${msg.title}</p>
+        </div>
+        <p class="text-xs sm:text-sm ${colors.subtext} text-center">${msg.subtitle}</p>
+        ${buttonHtml}
+      </div>
+    `;
+    card.style.display = 'block';
+
+    // Attach button listeners if shown
+    if (msg.showButton) {
+      const changeBtn = document.getElementById('change-station-btn-location-denied');
+      if (changeBtn && typeof LocationSelector !== 'undefined') {
+        changeBtn.addEventListener('click', () => LocationSelector.openModal());
+      }
+
+      const selectorBtn = document.getElementById('open-station-selector-btn');
+      if (selectorBtn && typeof LocationSelector !== 'undefined') {
+        selectorBtn.addEventListener('click', () => LocationSelector.openModal());
+      }
+    }
+  },
+
+  showOutsideProvinceMessage() {
+    this.showLocationMessage('outsideProvince');
+  },
+
+  init() {
+    if (this.locationInitialized) return;
+    this.locationInitialized = true;
+
+    if ('geolocation' in navigator) {
+      this.locationStatus = 'requesting';
+      if (!StationSelector.selectedStationId) {
+        this.showLocationMessage('requesting');
+      }
+
+      const locationTimeout = setTimeout(() => {
+        if (this.locationStatus === 'requesting') {
+          this.locationStatus = 'timeout';
+          if (!StationSelector.selectedStationId) {
+            this.showLocationMessage('timeout');
+          }
+        }
+      }, 15000);
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          clearTimeout(locationTimeout);
+          this.userLocation = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          };
+
+          // Track location permission granted
+          window.trackEvent?.('location_permission', {
+            permission_status: 'granted',
+            method: 'closest_station'
+          });
+
+          if (!ProvinceManager.userHasSelected) {
+            const closestProvince = ProvinceManager.getClosestProvince(
+              this.userLocation.latitude,
+              this.userLocation.longitude
+            );
+            if (closestProvince.id !== ProvinceManager.currentProvince.id) {
+              ProvinceManager.setProvince(closestProvince.id, false);
+            }
+          }
+
+          this.locationStatus = 'granted';
+          this.fetchAndDisplayClosestStation();
+        },
+        () => {
+          clearTimeout(locationTimeout);
+          this.locationStatus = 'denied';
+
+          // Track location permission denied
+          window.trackEvent?.('location_permission', {
+            permission_status: 'denied',
+            method: 'closest_station'
+          });
+
+          if (!StationSelector.selectedStationId) {
+            this.showLocationMessage('denied');
+          }
+          this.fetchAndDisplayClosestStation();
+        },
+        {
+          enableHighAccuracy: false,
+          timeout: 12000,
+          maximumAge: 0
+        }
+      );
+    }
+  },
+
+  calculateDistance(lat1, lon1, lat2, lon2) {
+    return Utils.calculateDistance(lat1, lon1, lat2, lon2);
+  },
+
+  findClosestStation(stations) {
+    return Utils.findClosestStationWithValidation(stations, this.userLocation, { requireAqi: true });
+  },
+
+  fetchAndDisplayClosestStation() {
+    let hasDispatched = false;
+
+    const checkStations = setInterval(() => {
+      if (stationsManagerInstance && stationsManagerInstance.stations.length > 0) {
+        clearInterval(checkStations);
+
+        if (!StationSelector.selectedStationId) {
+          const closest = this.findClosestStation(stationsManagerInstance.stations);
+          if (closest) {
+            this.displayClosestStation(closest, false);
+          }
+        }
+        if (!hasDispatched) {
+          hasDispatched = true;
+          document.dispatchEvent(new Event('locationReady'));
+        }
+      }
+    }, 100);
+
+    setTimeout(() => {
+      clearInterval(checkStations);
+      if (!hasDispatched) {
+        hasDispatched = true;
+        document.dispatchEvent(new Event('locationReady'));
+      }
+    }, 5000);
+  },
+
+  updateElement(id, content) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = content;
+  },
+
+  displayClosestStation(station, isUserSelected = false) {
+    if (!station) {
+      const card = document.getElementById('closest-station-card');
+      if (card) card.style.display = 'none';
+      return;
+    }
+
+    const card = document.getElementById('closest-station-card');
+    if (!card) return;
+
+    let content = document.getElementById('closest-station-content');
+    if (!content) {
+      card.innerHTML = `
+        <div id="closest-station-content" class="rounded-xl sm:rounded-2xl md:rounded-3xl p-3 sm:p-4 md:p-6 lg:p-8 text-white shadow-lg sm:shadow-2xl border-t-4">
+          <div class="mb-4 sm:mb-6 md:mb-8">
+            <div class="flex items-center justify-between gap-2 mb-2 sm:mb-3">
+              <h1 id="closest-station-name" class="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold flex-1 min-w-0 truncate"></h1>
+              <button id="change-station-btn" class="flex-shrink-0 px-2 sm:px-3 md:px-4 py-1 sm:py-1.5 md:py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors text-xs sm:text-sm font-semibold whitespace-nowrap" title="انتخاب ایستگاه دیگر"><i class="fas fa-map-marker-alt"></i></button>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <p id="station-selection-label" class="text-xs sm:text-sm font-semibold opacity-90"><i class="fas fa-map-pin"></i> نزدیک‌ترین ایستگاه</p>
+              <div id="distance-info" class="text-right">
+                <p id="closest-station-distance" class="text-lg sm:text-xl md:text-2xl lg:text-3xl font-bold"></p>
+              </div>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8 pb-4 sm:pb-6 md:pb-8 border-b border-white/20">
+            <div>
+              <p class="text-xs sm:text-sm opacity-90 mb-1 sm:mb-2">شاخص کیفیت هوا</p>
+              <div class="flex items-baseline gap-2">
+                <div id="closest-station-aqi" class="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold"></div>
+                <p id="closest-station-aqi-label" class="text-xs sm:text-sm md:text-lg lg:text-xl font-semibold"></p>
+              </div>
+            </div>
+            <div>
+              <p class="text-xs sm:text-sm opacity-90 mb-1 sm:mb-2">وضعیت کیفیت هوا</p>
+              <p id="closest-station-status" class="text-xs sm:text-sm md:text-lg lg:text-xl font-semibold line-clamp-2"></p>
+            </div>
+          </div>
+          <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-1.5 sm:gap-2 md:gap-3 lg:gap-4">
+            <div class="bg-white/10 rounded-md sm:rounded-lg p-1.5 sm:p-2 md:p-3 lg:p-4 backdrop-blur text-center"><p class="text-[10px] sm:text-xs opacity-75 mb-0.5 sm:mb-1">PM2.5</p><p id="closest-station-pm25" class="text-sm sm:text-base md:text-lg lg:text-xl font-bold">—</p></div>
+            <div class="bg-white/10 rounded-md sm:rounded-lg p-1.5 sm:p-2 md:p-3 lg:p-4 backdrop-blur text-center"><p class="text-[10px] sm:text-xs opacity-75 mb-0.5 sm:mb-1">PM10</p><p id="closest-station-pm10" class="text-sm sm:text-base md:text-lg lg:text-xl font-bold">—</p></div>
+            <div class="bg-white/10 rounded-md sm:rounded-lg p-1.5 sm:p-2 md:p-3 lg:p-4 backdrop-blur text-center"><p class="text-[10px] sm:text-xs opacity-75 mb-0.5 sm:mb-1">NO₂</p><p id="closest-station-no2" class="text-sm sm:text-base md:text-lg lg:text-xl font-bold">—</p></div>
+            <div class="bg-white/10 rounded-md sm:rounded-lg p-1.5 sm:p-2 md:p-3 lg:p-4 backdrop-blur text-center hidden sm:block"><p class="text-[10px] sm:text-xs opacity-75 mb-0.5 sm:mb-1">O₃</p><p id="closest-station-o3" class="text-sm sm:text-base md:text-lg lg:text-xl font-bold">—</p></div>
+            <div class="bg-white/10 rounded-md sm:rounded-lg p-1.5 sm:p-2 md:p-3 lg:p-4 backdrop-blur text-center hidden md:block"><p class="text-[10px] sm:text-xs opacity-75 mb-0.5 sm:mb-1">SO₂</p><p id="closest-station-so2" class="text-sm sm:text-base md:text-lg lg:text-xl font-bold">—</p></div>
+            <div class="bg-white/10 rounded-md sm:rounded-lg p-1.5 sm:p-2 md:p-3 lg:p-4 backdrop-blur text-center hidden md:block"><p class="text-[10px] sm:text-xs opacity-75 mb-0.5 sm:mb-1">CO</p><p id="closest-station-co" class="text-sm sm:text-base md:text-lg lg:text-xl font-bold">—</p></div>
+          </div>
+        </div>
+      `;
+      content = document.getElementById('closest-station-content');
+
+      // Add weather footer outside of closest-station-content
+      if (!document.getElementById('weather-footer')) {
+        const weatherFooter = document.createElement('div');
+        weatherFooter.id = 'weather-footer';
+        weatherFooter.className = 'mt-4 sm:mt-5 md:mt-6 p-4 sm:p-5 md:p-6 rounded-lg bg-blue-500/10 dark:bg-blue-500/15 hidden';
+        weatherFooter.innerHTML = WeatherManager.createWeatherFooterHTML();
+        card.appendChild(weatherFooter);
+
+        // Attach click listener for weather button and render cached data
+        if (typeof weatherManagerInstance !== 'undefined' && weatherManagerInstance) {
+          weatherManagerInstance.attachWeatherButtonListener();
+          weatherManagerInstance.renderCachedWeatherWidget();
+        }
+      }
+    }
+
+    const nameEl = document.getElementById('closest-station-name');
+    if (!nameEl) return;
+
+    this.updateElement('closest-station-name', Utils.toPersian(station.name));
+
+    const labelText = isUserSelected ? '<i class="fas fa-star"></i> ایستگاه انتخاب شده' :
+                      station.distance === undefined ? '<i class="fas fa-map-pin"></i> ایستگاه انتخاب شده' :
+                      '<i class="fas fa-map-pin"></i> نزدیک‌ترین ایستگاه';
+    const labelEl = document.getElementById('station-selection-label');
+    if (labelEl) labelEl.innerHTML = labelText;
+
+    if (station.distance !== undefined && station.distance !== null) {
+      this.updateElement('closest-station-distance', Utils.toPersian(station.distance.toFixed(1)) + ' کیلومتر');
+      const distInfo = document.getElementById('distance-info');
+      if (distInfo) distInfo.style.display = 'block';
+    } else {
+      const distInfo = document.getElementById('distance-info');
+      if (distInfo) distInfo.style.display = 'none';
+    }
+
+    const aqi = station.aqi || 0;
+    this.updateElement('closest-station-aqi', Utils.toPersian(Math.round(aqi)));
+    this.updateElement('closest-station-aqi-label', Utils.getAQILabel(aqi));
+    this.updateElement('closest-station-status', Utils.getAQIStatus(aqi));
+
+    const pollutants = ['pm25', 'pm10', 'no2', 'o3', 'so2', 'co'];
+    pollutants.forEach(key => {
+      this.updateElement(`closest-station-${key}`, Utils.formatNumber(station[key]));
+    });
+
+    const colors = Utils.getAQIColorClasses(aqi);
+    content.className = 'rounded-xl sm:rounded-2xl md:rounded-3xl p-3 sm:p-4 md:p-6 lg:p-8 text-white shadow-lg sm:shadow-2xl border-t-4';
+    content.style.backgroundImage = colors.gradient;
+    content.style.borderTopColor = colors.border;
+    card.style.display = 'block';
+  },
+
+  updateCardColors() {
+    const content = document.getElementById('closest-station-content');
+    const aqiEl = document.getElementById('closest-station-aqi');
+    if (!content || !aqiEl) return;
+
+    const aqiText = aqiEl.textContent?.trim();
+    if (!aqiText || aqiText === '—') return;
+
+    const aqi = parseInt(Utils.toEnglish(aqiText));
+    if (isNaN(aqi)) return;
+
+    const colors = Utils.getAQIColorClasses(aqi);
+    content.style.backgroundImage = colors.gradient;
+    content.style.borderTopColor = colors.border;
+  }
+};
+
+const ServiceWorkerManager = {
+  registration: null,
+  updateNotification: null,
+  updateBtn: null,
+
+  init() {
+    this.loadVersion();
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').then((reg) => {
+        this.registration = reg;
+
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              this.showUpdateNotification();
+            }
+          });
+        });
+      }).catch((error) => console.error('SW registration failed:', error));
+
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'UPDATE_AVAILABLE') {
+          this.showUpdateNotification();
+        }
+      });
+
+      navigator.serviceWorker.ready.then((reg) => {
+        setInterval(() => {
+          reg.update();
+        }, 60 * 60 * 1000);
+      });
+    }
+  },
+
+  async loadVersion() {
+    try {
+      const response = await fetch('/version.json');
+      const data = await response.json();
+      if (data.version) {
+        const versionText = `نسخه ${Utils.toPersian(data.version)}`;
+        const versionElements = [
+          'app-version',
+          'app-version-desktop',
+          'mobile-app-version'
+        ];
+        versionElements.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.textContent = versionText;
+        });
+      }
+    } catch (error) {
+      console.log('Version fetch failed:', error);
+    }
+  },
+
+  isStandalone() {
+    return window.matchMedia('(display-mode: standalone)').matches ||
+           window.navigator.standalone === true;
+  },
+
+  showUpdateNotification() {
+    if (!this.isStandalone()) {
+      return;
+    }
+
+    this.updateNotification = document.getElementById('update-notification');
+    this.updateBtn = document.getElementById('update-btn');
+
+    if (this.updateNotification && this.updateBtn) {
+      this.updateNotification.classList.remove('hidden');
+
+      // Remove any existing listener and add fresh one to prevent duplicates
+      const boundApplyUpdate = this.applyUpdate.bind(this);
+      this.updateBtn.onclick = boundApplyUpdate;
+    }
+  },
+
+  applyUpdate() {
+    if (!this.registration || !this.registration.waiting) {
+      console.log('No update available to apply');
+      if (this.updateNotification) {
+        this.updateNotification.classList.add('hidden');
+      }
+      return;
+    }
+
+    // Disable button and show loading state immediately
+    if (this.updateBtn) {
+      this.updateBtn.disabled = true;
+      this.updateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال به‌روزرسانی...';
+      this.updateBtn.classList.add('opacity-75', 'cursor-not-allowed');
+    }
+
+    let reloaded = false;
+
+    const reloadPage = () => {
+      if (!reloaded) {
+        reloaded = true;
+        sessionStorage.setItem('forceDataRefreshAfterUpdate', 'true');
+        window.location.reload();
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('controllerchange', reloadPage);
+
+    // Tell the waiting service worker to activate
+    this.registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+
+    // Fallback: force reload after 3 seconds if controllerchange doesn't fire
+    setTimeout(reloadPage, 3000);
+  },
+
+  async checkForUpdate() {
+    if (!this.registration) {
+      return false;
+    }
+
+    try {
+      await this.registration.update();
+
+      // Check immediately
+      if (this.registration.waiting) {
+        return true;
+      }
+
+      // Wait for installing service worker to become waiting
+      if (this.registration.installing) {
+        await new Promise((resolve) => {
+          this.registration.installing.addEventListener('statechange', function handler(e) {
+            if (e.target.state === 'installed') {
+              e.target.removeEventListener('statechange', handler);
+              resolve();
+            }
+          });
+        });
+
+        if (this.registration.waiting) {
+          return true;
+        }
+      }
+
+      return false;
+    } catch (error) {
+      console.log('Update check failed:', error);
+      return false;
+    }
+  }
+};
+
+const iOSRotationFix = {
+  init() {
+    if (!this.isIOS()) return;
+
+    window.addEventListener('orientationchange', () => {
+      this.handleOrientationChange();
+    });
+
+    window.addEventListener('resize', () => {
+      this.updateViewportHeight();
+    });
+
+    this.updateViewportHeight();
+  },
+
+  isIOS() {
+    return /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.MSStream;
+  },
+
+  handleOrientationChange() {
+    document.body.style.height = 'initial';
+
+    setTimeout(() => {
+      this.updateViewportHeight();
+      window.scrollTo(0, 0);
+    }, 100);
+  },
+
+  updateViewportHeight() {
+    const vh = window.innerHeight * 0.01;
+    document.documentElement.style.setProperty('--vh', `${vh}px`);
+  }
+};
+
+const FirstLoadAutoDetect = {
+  async tryAutoDetectOnFirstLoad() {
+    const hasProvinceSelected = ProvinceManager.getSelectedProvince() !== null;
+    const hasStationSelected = StationSelector.selectedStationId !== null;
+
+    if (hasProvinceSelected || hasStationSelected) {
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      return;
+    }
+
+    try {
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        });
+      });
+
+      const userLocation = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude
+      };
+
+      LocationManager.userLocation = userLocation;
+      LocationManager.locationStatus = 'granted';
+
+      window.trackEvent?.('location_permission', {
+        permission_status: 'granted',
+        method: 'auto_first_load'
+      });
+
+      const provinces = Object.values(PROVINCES);
+      const provincesWithDistance = provinces
+        .filter(p => p.center?.latitude && p.center?.longitude)
+        .map(province => ({
+          province,
+          distance: Utils.calculateDistance(
+            userLocation.latitude,
+            userLocation.longitude,
+            province.center.latitude,
+            province.center.longitude
+          )
+        }))
+        .sort((a, b) => a.distance - b.distance);
+
+      if (provincesWithDistance.length === 0) {
+        return;
+      }
+
+      let closestStation = null;
+      let closestProvince = null;
+      let minStationDistance = Infinity;
+      const MAX_PROVINCES_TO_CHECK = 3;
+
+      for (let i = 0; i < Math.min(MAX_PROVINCES_TO_CHECK, provincesWithDistance.length); i++) {
+        const { province, distance: provinceDistance } = provincesWithDistance[i];
+
+        if (i > 0 && provinceDistance > 200 && closestStation && minStationDistance < 100) {
+          break;
+        }
+
+        // Check client-side cache first to avoid unnecessary API calls
+        let data = null;
+        let stations = null;
+        let cityAvgAqi = null;
+
+        if (typeof stationsManagerInstance !== 'undefined' && stationsManagerInstance) {
+          const cachedData = stationsManagerInstance.getCachedData(province.id);
+          if (cachedData) {
+            data = cachedData;
+            stations = cachedData.stations || cachedData;
+            cityAvgAqi = cachedData.city_avg_aqi || null;
+          }
+        }
+
+        // If not in cache, fetch from API
+        if (!stations) {
+          if (i > 0) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+
+          try {
+            const response = await fetch(`/api.php?action=stations&state=${province.id}&csrf_token=${window.CSRF_TOKEN}`);
+
+            if (!response.ok) {
+              if (response.status === 429 && closestStation && minStationDistance < 50) {
+                break;
+              }
+              continue;
+            }
+
+            const responseData = await response.json();
+
+            // Handle new data structure with stations and city_avg_aqi
+            data = responseData.data || responseData;
+            stations = data.stations || data;
+            cityAvgAqi = data.city_avg_aqi || null;
+
+            // Store in cache for future use
+            if (typeof stationsManagerInstance !== 'undefined' && stationsManagerInstance) {
+              stationsManagerInstance.setCachedData(province.id, data);
+            }
+          } catch (error) {
+            console.error(`Error fetching province ${province.id}:`, error);
+            continue;
+          }
+        }
+
+        // Store city average AQI for this province
+        if (cityAvgAqi !== null) {
+          ProvinceManager.setCityAvgAqi(province.id, cityAvgAqi);
+        }
+
+        if (!stations || !Array.isArray(stations) || stations.length === 0) continue;
+
+        const nearest = Utils.findClosestStationWithValidation(stations, userLocation);
+        if (nearest && nearest.distance < minStationDistance) {
+          minStationDistance = nearest.distance;
+          closestStation = nearest;
+          closestProvince = province;
+
+          if (minStationDistance < 20) {
+            break;
+          }
+        }
+      }
+
+      if (closestStation && closestProvince) {
+        ProvinceManager.setProvince(closestProvince.id, false);
+        StationSelector.selectStation(closestStation);
+
+        window.trackEvent?.('auto_detect_location', {
+          province_id: closestProvince.id,
+          station_id: closestStation.id || closestStation.stationId,
+          method: 'first_load'
+        });
+      }
+    } catch (error) {
+      console.log('Auto-detection on first load declined or failed:', error.message);
+      LocationManager.locationStatus = 'denied';
+
+      window.trackEvent?.('location_permission', {
+        permission_status: 'denied',
+        method: 'auto_first_load'
+      });
+    }
+  }
+};
+
+const AutoDetectUI = {
+  detectedStation: null,
+  detectedProvince: null,
+
+  init() {
+    const section = document.getElementById('auto-detect-section');
+
+    if (section) {
+      section.addEventListener('click', () => {
+        const promptState = document.getElementById('auto-detect-prompt');
+        const successState = document.getElementById('auto-detect-success');
+        const deniedState = document.getElementById('auto-detect-denied');
+        const requestingState = document.getElementById('auto-detect-requesting');
+
+        if (requestingState && !requestingState.classList.contains('hidden')) {
+          return;
+        }
+
+        if (successState && !successState.classList.contains('hidden')) {
+          this.useDetectedLocation();
+        } else if (deniedState && !deniedState.classList.contains('hidden')) {
+          this.requestLocation();
+        } else if (promptState && !promptState.classList.contains('hidden')) {
+          if (LocationManager.locationStatus === 'granted' && LocationManager.userLocation) {
+            this.tryAutoDetect();
+          } else {
+            this.requestLocation();
+          }
+        }
+      });
+    }
+  },
+
+  showState(state) {
+    const states = ['prompt', 'requesting', 'success', 'denied'];
+    states.forEach(s => {
+      const el = document.getElementById(`auto-detect-${s}`);
+      if (el) {
+        el.classList.toggle('hidden', s !== state);
+      }
+    });
+  },
+
+  updateStateOnOpen() {
+    // Always show auto-detect section in modal
+    const autoDetectSection = document.getElementById('auto-detect-section');
+    if (autoDetectSection) {
+      autoDetectSection.classList.remove('hidden');
+    }
+
+    // Set appropriate state based on location status
+    if (LocationManager.locationStatus === 'granted' && LocationManager.userLocation) {
+      // Location is available, show prompt so user can re-detect if needed
+      this.showState('prompt');
+    } else if (LocationManager.locationStatus === 'denied') {
+      this.showState('denied');
+    } else {
+      this.showState('prompt');
+    }
+  },
+
+  async requestLocation() {
+    this.showState('requesting');
+
+    try {
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        });
+      });
+
+      LocationManager.userLocation = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude
+      };
+      LocationManager.locationStatus = 'granted';
+
+      window.trackEvent?.('location_permission', {
+        permission_status: 'granted',
+        method: 'manual'
+      });
+
+      await this.tryAutoDetect();
+    } catch (error) {
+      LocationManager.locationStatus = 'denied';
+
+      window.trackEvent?.('location_permission', {
+        permission_status: 'denied',
+        method: 'manual'
+      });
+
+      this.showState('denied');
+    }
+  },
+
+  async tryAutoDetect() {
+    if (!LocationManager.userLocation) {
+      this.showState('prompt');
+      return;
+    }
+
+    this.showState('requesting');
+
+    try {
+      const provinces = Object.values(PROVINCES);
+      let closestStation = null;
+      let closestProvince = null;
+      let minStationDistance = Infinity;
+
+      // First, check if we already have stations loaded from current province
+      const currentProvinceId = ProvinceManager.getCurrentProvinceId();
+      if (StationSelector.allStations && StationSelector.allStations.length > 0) {
+        const nearest = Utils.findClosestStationWithValidation(
+          StationSelector.allStations,
+          LocationManager.userLocation
+        );
+
+        if (nearest && nearest.distance < 50) {
+          closestStation = nearest;
+          minStationDistance = nearest.distance;
+          closestProvince = PROVINCES[currentProvinceId];
+          this.detectedStation = closestStation;
+          this.detectedProvince = closestProvince;
+
+          const stationNameEl = document.getElementById('auto-detect-station-name');
+          const provinceNameEl = document.getElementById('auto-detect-province-name');
+
+          if (stationNameEl) {
+            stationNameEl.textContent = closestStation.stationName_Fa || closestStation.name || closestStation.stationName || 'ایستگاه نامشخص';
+          }
+          if (provinceNameEl) {
+            provinceNameEl.textContent = closestProvince.name;
+          }
+
+          this.showState('success');
+          return;
+        }
+      }
+
+      const provincesWithDistance = provinces
+        .filter(p => p.center?.latitude && p.center?.longitude)
+        .map(province => ({
+          province,
+          distance: Utils.calculateDistance(
+            LocationManager.userLocation.latitude,
+            LocationManager.userLocation.longitude,
+            province.center.latitude,
+            province.center.longitude
+          )
+        }))
+        .sort((a, b) => a.distance - b.distance);
+
+      if (provincesWithDistance.length === 0) {
+        this.showState('prompt');
+        return;
+      }
+
+      const MAX_PROVINCES_TO_CHECK = 3;
+
+      for (let i = 0; i < Math.min(MAX_PROVINCES_TO_CHECK, provincesWithDistance.length); i++) {
+        const { province, distance: provinceDistance } = provincesWithDistance[i];
+
+        if (i > 0 && provinceDistance > 200 && closestStation && minStationDistance < 100) {
+          break;
+        }
+
+        // Check client-side cache first to avoid unnecessary API calls
+        let data = null;
+        let stations = null;
+        let cityAvgAqi = null;
+
+        if (typeof stationsManagerInstance !== 'undefined' && stationsManagerInstance) {
+          const cachedData = stationsManagerInstance.getCachedData(province.id);
+          if (cachedData) {
+            data = cachedData;
+            stations = cachedData.stations || cachedData;
+            cityAvgAqi = cachedData.city_avg_aqi || null;
+          }
+        }
+
+        // If not in cache, fetch from API
+        if (!stations) {
+          // Add delay between requests to avoid rate limiting (1 second)
+          if (i > 0) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+
+          try {
+            const response = await fetch(`/api.php?action=stations&state=${province.id}&csrf_token=${window.CSRF_TOKEN}`);
+
+            if (!response.ok) {
+              if (response.status === 429 && closestStation && minStationDistance < 50) {
+                break;
+              }
+              continue;
+            }
+
+            const responseData = await response.json();
+
+            // Handle new data structure with stations and city_avg_aqi
+            data = responseData.data || responseData;
+            stations = data.stations || data;
+            cityAvgAqi = data.city_avg_aqi || null;
+
+            // Store in cache for future use
+            if (typeof stationsManagerInstance !== 'undefined' && stationsManagerInstance) {
+              stationsManagerInstance.setCachedData(province.id, data);
+            }
+          } catch (error) {
+            continue;
+          }
+        }
+
+        // Store city average AQI for this province
+        if (cityAvgAqi !== null) {
+          ProvinceManager.setCityAvgAqi(province.id, cityAvgAqi);
+        }
+
+        if (!stations || !Array.isArray(stations) || stations.length === 0) {
+          continue;
+        }
+
+        const nearest = Utils.findClosestStationWithValidation(stations, LocationManager.userLocation);
+        if (nearest && nearest.distance < minStationDistance) {
+          minStationDistance = nearest.distance;
+          closestStation = nearest;
+          closestProvince = province;
+
+          if (minStationDistance < 20) {
+            break;
+          }
+        }
+      }
+
+      if (!closestStation || !closestProvince) {
+        // If we couldn't find a station due to rate limiting or errors,
+        // but location is available, show a more appropriate message
+        this.showState('prompt');
+        return;
+      }
+
+      this.detectedStation = closestStation;
+      this.detectedProvince = closestProvince;
+
+      const stationNameEl = document.getElementById('auto-detect-station-name');
+      const provinceNameEl = document.getElementById('auto-detect-province-name');
+
+      if (stationNameEl) {
+        stationNameEl.textContent = closestStation.stationName_Fa || closestStation.name || closestStation.stationName || 'ایستگاه نامشخص';
+      }
+      if (provinceNameEl) {
+        provinceNameEl.textContent = closestProvince.name;
+      }
+
+      this.showState('success');
+    } catch (error) {
+      // Don't show denied for errors - location permission is still granted
+      // Just reset to prompt so user can try again
+      this.showState('prompt');
+    }
+  },
+
+  useDetectedLocation() {
+    if (!this.detectedStation || !this.detectedProvince) {
+      return;
+    }
+
+    ProvinceManager.setProvince(this.detectedProvince.id, false);
+    StationSelector.selectStation(this.detectedStation);
+
+    const modal = document.getElementById('location-modal');
+    if (modal) {
+      modal.classList.add('hidden');
+    }
+
+    window.trackEvent?.('auto_detect_location', {
+      province_id: this.detectedProvince.id,
+      station_id: stationId,
+      method: 'modal'
+    });
+  }
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  ServiceWorkerManager.init();
+  ProvinceManager.init();
+  ProvinceManager.loadAllProvincesSummary();
+  LocationManager.init();
+  DarkMode.init();
+  StationSelector.init();
+  LocationSelector.init();
+  AutoDetectUI.init();
+  setupHeaderMenu();
+  iOSRotationFix.init();
+
+  FirstLoadAutoDetect.tryAutoDetectOnFirstLoad();
+
+  document.addEventListener('themeChanged', () => {
+    LocationManager.updateCardColors();
+  });
+
+  document.addEventListener('provinceChanged', () => {
+    const handleProvinceChange = async () => {
+      if (!stationsManagerInstance) {
+        setTimeout(handleProvinceChange, 100);
+        return;
+      }
+
+      const modal = document.getElementById('location-modal');
+      const isModalOpen = modal && !modal.classList.contains('hidden');
+
+      stationsManagerInstance.stations = [];
+      StationSelector.allStations = [];
+      StationSelector.loadSavedStation();
+
+      try {
+        await stationsManagerInstance.fetchStations(false, false);
+
+        if (isModalOpen) {
+          LocationSelector.renderProvinceDropdown();
+          LocationSelector.renderStationDropdown(StationSelector.allStations);
+        }
+
+        if (StationSelector.selectedStationId && stationsManagerInstance.stations.length > 0) {
+          const savedStationExists = stationsManagerInstance.stations.some(
+            s => parseInt(s.id) === StationSelector.selectedStationId
+          );
+
+          if (!savedStationExists) {
+            StationSelector.clearSelection();
+            LocationManager.showOutsideProvinceMessage();
+          }
+        }
+      } catch (error) {
+        if (isModalOpen) {
+          LocationSelector.showStationLoading(false);
+          LocationSelector.renderProvinceSelector();
+          LocationSelector.showError('خطا در دریافت ایستگاه‌ها. لطفا دوباره تلاش کنید.');
+        }
+      }
+    };
+
+    handleProvinceChange();
+  });
+
+  const changeLocationHeaderBtn = document.getElementById('change-location-menu-btn');
+  const changeLocationMenuBtn = document.getElementById('mobile-change-location-btn');
+
+  if (changeLocationHeaderBtn) {
+    changeLocationHeaderBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      LocationSelector.openModal();
+    });
+  }
+
+  if (changeLocationMenuBtn) {
+    changeLocationMenuBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      LocationSelector.openModal();
+      MobileMenuUtils.close();
+    });
+  }
+});
+
+function setupHeaderMenu() {
+
+  const themeOptions = document.querySelectorAll('.theme-option');
+  themeOptions.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const theme = btn.getAttribute('data-theme');
+      DarkMode.applyTheme(theme);
+      updateThemeMenuUI();
+    });
+  });
+
+  const mobileThemeOptions = document.querySelectorAll('.mobile-theme-option');
+  mobileThemeOptions.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const theme = btn.getAttribute('data-theme');
+      DarkMode.applyTheme(theme);
+      updateThemeMenuUI();
+      MobileMenuUtils.close();
+    });
+  });
+
+  function showToast(message) {
+    const toast = document.getElementById('refresh-toast');
+    if (!toast) return;
+
+    toast.textContent = message;
+    toast.classList.remove('hidden');
+
+    setTimeout(() => {
+      toast.classList.add('hidden');
+    }, 3000);
+  }
+
+  const mobileRefreshBtn = document.getElementById('mobile-refresh-btn');
+  if (mobileRefreshBtn) {
+    mobileRefreshBtn.addEventListener('click', async () => {
+      const icon = mobileRefreshBtn.querySelector('i');
+      const originalIcon = icon.className;
+
+      icon.className = 'fas fa-spinner fa-spin';
+      MobileMenuUtils.close();
+
+      const hasUpdate = await ServiceWorkerManager.checkForUpdate();
+
+      if (hasUpdate) {
+        showToast('در حال نصب نسخه جدید...');
+        setTimeout(() => {
+          ServiceWorkerManager.applyUpdate();
+        }, 1000);
+      } else {
+        if (typeof stationsManagerInstance !== 'undefined' && stationsManagerInstance) {
+          await stationsManagerInstance.fetchStations(true, true);
+          if (typeof weatherManagerInstance !== 'undefined' && weatherManagerInstance) {
+            await weatherManagerInstance.fetchAllWeather(true);
+          }
+          showToast('داده‌ها به‌روزرسانی شد');
+        } else {
+          showToast('خطا در به‌روزرسانی');
+        }
+
+        setTimeout(() => {
+          icon.className = originalIcon;
+        }, 500);
+      }
+    });
+  }
+
+  const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+  const closeMobileMenuBtn = document.getElementById('close-mobile-menu');
+  const mobileMenuOverlay = document.getElementById('mobile-menu-overlay');
+
+  if (mobileMenuBtn) {
+    mobileMenuBtn.addEventListener('click', () => MobileMenuUtils.open());
+  }
+
+  if (closeMobileMenuBtn) {
+    closeMobileMenuBtn.addEventListener('click', () => MobileMenuUtils.close());
+  }
+
+  if (mobileMenuOverlay) {
+    mobileMenuOverlay.addEventListener('click', () => MobileMenuUtils.close());
+  }
+
+  updateThemeMenuUI();
+
+  const installBtn = document.getElementById('install-btn');
+  const mobileInstallBtn = document.getElementById('mobile-install-btn');
+
+  if (installBtn && mobileInstallBtn) {
+    const observer = new MutationObserver(() => {
+      mobileInstallBtn.style.display = installBtn.style.display;
+    });
+
+    observer.observe(installBtn, { attributes: true, attributeFilter: ['style'] });
+    installBtn.addEventListener('click', handleInstallClick);
+    mobileInstallBtn.addEventListener('click', handleInstallClick);
+  }
+}
+
+function updateThemeMenuUI() {
+  const currentPref = DarkMode.getCurrentPreference();
+
+  ['.theme-option', '.mobile-theme-option'].forEach(selector => {
+    document.querySelectorAll(selector).forEach(btn => {
+      const theme = btn.getAttribute('data-theme');
+      const isSelected = theme === currentPref;
+      btn.classList.toggle('bg-blue-100', isSelected);
+      btn.classList.toggle('dark:bg-blue-900', isSelected);
+      btn.querySelector('span').classList.toggle('font-semibold', isSelected);
+      btn.querySelector('span').classList.toggle('text-blue-600', isSelected);
+      btn.querySelector('span').classList.toggle('dark:text-blue-300', isSelected);
+    });
+  });
+}
+
+function handleInstallClick() {
+  if (window.deferredPrompt) {
+    window.deferredPrompt.prompt();
+    window.deferredPrompt.userChoice.then(() => {
+      window.deferredPrompt = null;
+      const installBtn = document.getElementById('install-btn');
+      const mobileInstallBtn = document.getElementById('mobile-install-btn');
+      if (installBtn) installBtn.style.display = 'none';
+      if (mobileInstallBtn) mobileInstallBtn.style.display = 'none';
+    });
+  }
+}
